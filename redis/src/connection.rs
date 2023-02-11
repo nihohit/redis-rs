@@ -1345,7 +1345,7 @@ impl Msg {
     /// not happen) then the return value is `"?"`.
     pub fn get_channel_name(&self) -> &str {
         match self.channel {
-            Value::Data(ref bytes) => from_utf8(bytes).unwrap_or("?"),
+            Value::BulkString(ref bytes) => from_utf8(bytes).unwrap_or("?"),
             _ => "?",
         }
     }
@@ -1360,7 +1360,7 @@ impl Msg {
     /// in the raw bytes in it.
     pub fn get_payload_bytes(&self) -> &[u8] {
         match self.payload {
-            Value::Data(ref bytes) => bytes,
+            Value::BulkString(ref bytes) => bytes,
             _ => b"",
         }
     }

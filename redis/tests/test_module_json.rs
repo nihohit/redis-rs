@@ -179,8 +179,8 @@ fn test_module_json_arr_pop() {
         json_arrpop,
         Ok(Array(vec![
             // convert string 3 to its ascii value as bytes
-            Data(Vec::from("3".as_bytes())),
-            Data(Vec::from("4".as_bytes()))
+            BulkString(Vec::from("3".as_bytes())),
+            BulkString(Vec::from("4".as_bytes()))
         ]))
     );
 
@@ -196,7 +196,11 @@ fn test_module_json_arr_pop() {
 
     assert_eq!(
         json_arrpop_2,
-        Ok(Array(vec![Data(Vec::from("\"bar\"".as_bytes())), Nil, Nil]))
+        Ok(Array(vec![
+            BulkString(Vec::from("\"bar\"".as_bytes())),
+            Nil,
+            Nil
+        ]))
     );
 }
 
@@ -326,8 +330,8 @@ fn test_module_json_mget() {
     assert_eq!(
         json_mget,
         Ok(Array(vec![
-            Data(Vec::from("[1,3]".as_bytes())),
-            Data(Vec::from("[4,6]".as_bytes()))
+            BulkString(Vec::from("[1,3]".as_bytes())),
+            BulkString(Vec::from("[4,6]".as_bytes()))
         ]))
     );
 }
@@ -376,8 +380,8 @@ fn test_module_json_obj_keys() {
         Ok(Array(vec![
             Nil,
             Array(vec![
-                Data(Vec::from("b".as_bytes())),
-                Data(Vec::from("c".as_bytes()))
+                BulkString(Vec::from("b".as_bytes())),
+                BulkString(Vec::from("c".as_bytes()))
             ])
         ]))
     );
@@ -487,7 +491,7 @@ fn test_module_json_type() {
 
     assert_eq!(
         json_type_a,
-        Ok(Array(vec![Data(Vec::from("string".as_bytes()))]))
+        Ok(Array(vec![BulkString(Vec::from("string".as_bytes()))]))
     );
 
     let json_type_b: RedisResult<Value> = con.json_type(TEST_KEY, "$..a");
@@ -495,8 +499,8 @@ fn test_module_json_type() {
     assert_eq!(
         json_type_b,
         Ok(Array(vec![
-            Data(Vec::from("integer".as_bytes())),
-            Data(Vec::from("boolean".as_bytes()))
+            BulkString(Vec::from("integer".as_bytes())),
+            BulkString(Vec::from("boolean".as_bytes()))
         ]))
     );
 

@@ -111,7 +111,7 @@ pub fn respond_startup(name: &str, cmd: &[u8]) -> Result<(), RedisResult<Value>>
             Value::Int(0),
             Value::Int(16383),
             Value::Array(vec![
-                Value::Data(name.as_bytes().to_vec()),
+                Value::BulkString(name.as_bytes().to_vec()),
                 Value::Int(6379),
             ]),
         ])])))
@@ -124,14 +124,14 @@ pub fn respond_startup(name: &str, cmd: &[u8]) -> Result<(), RedisResult<Value>>
 
 pub fn respond_startup_two_nodes(name: &str, cmd: &[u8]) -> Result<(), RedisResult<Value>> {
     if contains_slice(cmd, b"PING") {
-        Err(Ok(Value::Status("OK".into())))
+        Err(Ok(Value::SimpleString("OK".into())))
     } else if contains_slice(cmd, b"CLUSTER") && contains_slice(cmd, b"SLOTS") {
         Err(Ok(Value::Array(vec![
             Value::Array(vec![
                 Value::Int(0),
                 Value::Int(8191),
                 Value::Array(vec![
-                    Value::Data(name.as_bytes().to_vec()),
+                    Value::BulkString(name.as_bytes().to_vec()),
                     Value::Int(6379),
                 ]),
             ]),
@@ -139,13 +139,13 @@ pub fn respond_startup_two_nodes(name: &str, cmd: &[u8]) -> Result<(), RedisResu
                 Value::Int(8192),
                 Value::Int(16383),
                 Value::Array(vec![
-                    Value::Data(name.as_bytes().to_vec()),
+                    Value::BulkString(name.as_bytes().to_vec()),
                     Value::Int(6380),
                 ]),
             ]),
         ])))
     } else if contains_slice(cmd, b"READONLY") {
-        Err(Ok(Value::Status("OK".into())))
+        Err(Ok(Value::SimpleString("OK".into())))
     } else {
         Ok(())
     }
@@ -160,11 +160,11 @@ pub fn respond_startup_with_replica(name: &str, cmd: &[u8]) -> Result<(), RedisR
                 Value::Int(0),
                 Value::Int(8191),
                 Value::Array(vec![
-                    Value::Data(name.as_bytes().to_vec()),
+                    Value::BulkString(name.as_bytes().to_vec()),
                     Value::Int(6379),
                 ]),
                 Value::Array(vec![
-                    Value::Data(name.as_bytes().to_vec()),
+                    Value::BulkString(name.as_bytes().to_vec()),
                     Value::Int(6380),
                 ]),
             ]),
@@ -172,11 +172,11 @@ pub fn respond_startup_with_replica(name: &str, cmd: &[u8]) -> Result<(), RedisR
                 Value::Int(8192),
                 Value::Int(16383),
                 Value::Array(vec![
-                    Value::Data(name.as_bytes().to_vec()),
+                    Value::BulkString(name.as_bytes().to_vec()),
                     Value::Int(6381),
                 ]),
                 Value::Array(vec![
-                    Value::Data(name.as_bytes().to_vec()),
+                    Value::BulkString(name.as_bytes().to_vec()),
                     Value::Int(6382),
                 ]),
             ]),
