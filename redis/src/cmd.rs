@@ -1,3 +1,4 @@
+use bytes::{BufMut, Bytes, BytesMut};
 #[cfg(feature = "aio")]
 use futures_util::{
     future::BoxFuture,
@@ -28,6 +29,19 @@ pub struct Cmd {
     // Arg::Simple contains the offset that marks the end of the argument
     args: Vec<Arg<usize>>,
     cursor: Option<u64>,
+}
+
+#[derive(Clone)]
+pub struct ThinCmdBuilder {
+    pub(crate) data: BytesMut,
+    pub(crate) arg_count: usize,
+    pub(crate) num_to_string: ::itoa::Buffer,
+}
+
+#[derive(Clone)]
+pub struct ThinCmd {
+    pub(crate) data: Bytes,
+    pub(crate) arg_count: usize,
 }
 
 /// Represents a redis iterator.
@@ -287,6 +301,54 @@ impl RedisWrite for Cmd {
 impl Default for Cmd {
     fn default() -> Cmd {
         Cmd::new()
+    }
+}
+
+impl Default for ThinCmdBuilder {
+    fn default() -> ThinCmdBuilder {
+        ThinCmdBuilder::new()
+    }
+}
+
+impl ThinCmdBuilder {
+    /// Creates a new empty command.
+    pub fn new() -> ThinCmdBuilder {
+        Self::with_capacity(0)
+    }
+
+    pub fn with_capacity(capacity: usize) -> ThinCmdBuilder {
+        ThinCmdBuilder {
+            data: BytesMut::with_capacity(capacity),
+            arg_count: 0,
+            num_to_string: ::itoa::Buffer::new(),
+        }
+    }
+
+    #[inline]
+    pub fn arg<T: ToRedisArgs>(&mut self, arg: T) -> &mut Self {
+        self.arg_count += 1;
+        arg.write_redis_args(self);
+        self
+    }
+
+    pub fn build(self) -> ThinCmd {
+        ThinCmd {
+            data: self.data.freeze(),
+            arg_count: self.arg_count,
+            // cursor: self.cursor,
+        }
+    }
+}
+
+impl RedisWrite for ThinCmdBuilder {
+    fn write_arg(&mut self, arg: &[u8]) {
+        self.data.put(&b"$"[..]);
+        let s = self.num_to_string.format(arg.len());
+        self.data.put(s.as_bytes());
+        self.data.put(&b"\r\n"[..]);
+
+        self.data.put(arg);
+        self.data.put(&b"\r\n"[..]);
     }
 }
 
