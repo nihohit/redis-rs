@@ -269,10 +269,7 @@ where
 {
     let mut buf = ::itoa::Buffer::new();
 
-    cmd.write_all(b"*")?;
-    let s = buf.format(args.len());
-    cmd.write_all(s.as_bytes())?;
-    cmd.write_all(b"\r\n")?;
+    write_header(args.len(), cmd, &mut buf)?;
 
     let mut cursor_bytes = itoa::Buffer::new();
     for item in args {
@@ -290,6 +287,17 @@ where
         cmd.write_all(b"\r\n")?;
     }
     Ok(())
+}
+
+pub(crate) fn write_header(
+    length: usize,
+    cmd: &mut (impl ?Sized + io::Write),
+    num_to_string: &mut ::itoa::Buffer,
+) -> io::Result<()> {
+    cmd.write_all(b"*")?;
+    let s = num_to_string.format(length);
+    cmd.write_all(s.as_bytes())?;
+    cmd.write_all(b"\r\n")
 }
 
 impl RedisWrite for Cmd {
