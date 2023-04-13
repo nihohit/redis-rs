@@ -1,5 +1,7 @@
 use futures::{future, prelude::*, StreamExt};
-use redis::{aio::MultiplexedConnection, cmd, AsyncCommands, ErrorKind, RedisResult};
+use redis::{
+    aio::MultiplexedConnection, cmd, AsyncCommands, ErrorKind, RedisResult, ThinCmdBuilder,
+};
 
 use crate::support::*;
 
@@ -21,6 +23,36 @@ fn test_args() {
             .query_async(&mut con)
             .await?;
         let result = redis::cmd("MGET")
+            .arg(&["key1", "key2"])
+            .query_async(&mut con)
+            .await;
+        assert_eq!(result, Ok(("foo".to_string(), b"bar".to_vec())));
+        result
+    }))
+    .unwrap();
+}
+
+#[test]
+fn test_args_in_thin_cmd() {
+    let ctx = TestContext::new();
+    let connect = ctx.multiplexed_async_connection();
+
+    block_on_all(connect.and_then(|mut con| async move {
+        ThinCmdBuilder::new()
+            .arg("SET")
+            .arg("key1")
+            .arg(b"foo")
+            .query_async(&mut con)
+            .await?;
+        ThinCmdBuilder::new()
+            .arg("SET")
+            .arg("key2")
+            .arg(b"bar")
+            .query_async(&mut con)
+            .await?;
+
+        let result = ThinCmdBuilder::new()
+            .arg("MGET")
             .arg(&["key1", "key2"])
             .query_async(&mut con)
             .await;
