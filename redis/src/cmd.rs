@@ -178,7 +178,7 @@ impl<'a, T: FromRedisValue + Unpin + Send + 'a> Stream for AsyncIter<'a, T> {
     }
 }
 
-fn countdigits(mut v: usize) -> usize {
+pub(crate) fn countdigits(mut v: usize) -> usize {
     let mut result = 1;
     loop {
         if v < 10 {
