@@ -110,7 +110,7 @@ struct ClusterConnInner<C> {
 #[derive(Clone)]
 enum CmdArg<C> {
     Cmd {
-        cmd: Arc<Cmd>,
+        cmd: Arc<Cmd>, // TODO - use Bytes instead, after rebasing on the routing change.
         func: fn(C, Arc<Cmd>) -> RedisFuture<'static, Response>,
     },
     Pipeline {
@@ -848,6 +848,10 @@ where
 
     fn get_db(&self) -> i64 {
         0
+    }
+
+    fn req_packed_thin_command(&mut self, _cmd: crate::ThinCmd) -> RedisFuture<Value> {
+        todo!()
     }
 }
 /// Implements the process of connecting to a Redis server

@@ -254,6 +254,10 @@ impl ConnectionLike for ErrorConnection {
     fn get_db(&self) -> i64 {
         self.inner.get_db()
     }
+
+    fn req_packed_thin_command(&mut self, _cmd: redis::ThinCmd) -> RedisFuture<Value> {
+        todo!()
+    }
 }
 
 #[test]

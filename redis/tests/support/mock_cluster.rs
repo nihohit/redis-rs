@@ -165,6 +165,10 @@ impl aio::ConnectionLike for MockConnection {
     fn get_db(&self) -> i64 {
         0
     }
+
+    fn req_packed_thin_command(&mut self, _cmd: redis::ThinCmd) -> RedisFuture<Value> {
+        todo!()
+    }
 }
 
 impl redis::ConnectionLike for MockConnection {
