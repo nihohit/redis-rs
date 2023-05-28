@@ -405,7 +405,7 @@ pub use crate::types::{
 #[cfg(feature = "aio")]
 #[cfg_attr(docsrs, doc(cfg(feature = "aio")))]
 pub use crate::{
-    cmd::{AsyncIter, ThinCmd, ThinCmdBuilder},
+    cmd::{pack_command_to_bytes, AsyncIter},
     commands::AsyncCommands,
     parser::parse_redis_value_async,
     types::RedisFuture,

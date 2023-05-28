@@ -167,49 +167,16 @@ where
 
 #[cfg(feature = "aio")]
 mod aio_support {
-    use crate::{cmd::write_header, ThinCmd};
 
     use super::*;
 
-    use bytes::{Buf, BufMut, Bytes, BytesMut};
+    use bytes::{Buf, Bytes, BytesMut};
     use tokio::io::AsyncRead;
     use tokio_util::codec::{Decoder, Encoder};
-
-    #[derive(Clone)]
-    pub(crate) struct CodecInput {
-        data: Bytes,
-        /// If header is present, the data doesn't contain the header detailing how many items are in the args array.
-        header: Option<usize>,
-    }
-
-    impl From<Vec<u8>> for CodecInput {
-        fn from(data: Vec<u8>) -> Self {
-            CodecInput {
-                data: data.into(),
-                header: None,
-            }
-        }
-    }
-
-    impl From<ThinCmd> for CodecInput {
-        fn from(value: ThinCmd) -> Self {
-            CodecInput {
-                data: value.data,
-                header: Some(value.arg_count),
-            }
-        }
-    }
-
-    impl From<Bytes> for CodecInput {
-        fn from(data: Bytes) -> Self {
-            CodecInput { data, header: None }
-        }
-    }
 
     #[derive(Default)]
     pub struct ValueCodec {
         state: AnySendSyncPartialState,
-        num_to_string: ::itoa::Buffer,
     }
 
     impl ValueCodec {
@@ -254,16 +221,10 @@ mod aio_support {
         }
     }
 
-    impl Encoder<CodecInput> for ValueCodec {
+    impl Encoder<Bytes> for ValueCodec {
         type Error = RedisError;
-        fn encode(&mut self, input: CodecInput, dst: &mut BytesMut) -> Result<(), Self::Error> {
-            let mut dst = dst;
-            if let Some(arg_count) = input.header {
-                let mut writer = dst.writer();
-                write_header(arg_count, &mut writer, &mut self.num_to_string)?;
-                dst = writer.into_inner();
-            };
-            dst.extend_from_slice(input.data.as_ref());
+        fn encode(&mut self, input: Bytes, dst: &mut BytesMut) -> Result<(), Self::Error> {
+            dst.extend_from_slice(input.as_ref());
             Ok(())
         }
     }

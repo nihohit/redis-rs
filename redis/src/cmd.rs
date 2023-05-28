@@ -1,5 +1,4 @@
-#[cfg(feature = "aio")]
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 #[cfg(feature = "aio")]
 use futures_util::{
     future::BoxFuture,
@@ -32,24 +31,6 @@ pub struct Cmd {
     cursor: Option<u64>,
 }
 
-#[cfg(feature = "aio")]
-/// A more memory-efficient representative of redis commands than [Cmd].
-#[derive(Clone)]
-pub struct ThinCmd {
-    /// bytes representing the packed command.
-    pub data: Bytes,
-    pub(crate) arg_count: usize,
-}
-
-#[cfg(feature = "aio")]
-/// A builder for [ThinCmd].
-#[derive(Clone)]
-pub struct ThinCmdBuilder {
-    pub(crate) data: BytesMut,
-    pub(crate) arg_count: usize,
-    pub(crate) num_to_string: ::itoa::Buffer,
-}
-
 /// Represents a redis iterator.
 pub struct Iter<'a, T: FromRedisValue> {
     batch: std::vec::IntoIter<T>,
@@ -57,6 +38,17 @@ pub struct Iter<'a, T: FromRedisValue> {
     con: &'a mut (dyn ConnectionLike + 'a),
     cmd: Cmd,
 }
+
+// pub fn pack_command<I, T>(args: I) -> Bytes
+// where
+//     T: AsRef<[u8]>,
+//     I: IntoIterator<Item = T>,
+// {
+//     let mut length = 0;
+//     for arg in args.iter() {
+//         length += redis::bulklen(arg.len());
+//     }
+// }
 
 impl<'a, T: FromRedisValue> Iterator for Iter<'a, T> {
     type Item = T;
@@ -263,13 +255,13 @@ where
     write_command(cmd, args, cursor).unwrap()
 }
 
-fn write_command<'a, I>(cmd: &mut (impl ?Sized + io::Write), args: I, cursor: u64) -> io::Result<()>
+fn write_command<'a, I>(cmd: &mut impl BufMut, args: I, cursor: u64) -> io::Result<()>
 where
     I: IntoIterator<Item = Arg<&'a [u8]>> + Clone + ExactSizeIterator,
 {
     let mut buf = ::itoa::Buffer::new();
 
-    write_header(args.len(), cmd, &mut buf)?;
+    write_header(args.len(), cmd, &mut buf);
 
     let mut cursor_bytes = itoa::Buffer::new();
     for item in args {
@@ -278,26 +270,26 @@ where
             Arg::Simple(val) => val,
         };
 
-        cmd.write_all(b"$")?;
-        let s = buf.format(bytes.len());
-        cmd.write_all(s.as_bytes())?;
-        cmd.write_all(b"\r\n")?;
-
-        cmd.write_all(bytes)?;
-        cmd.write_all(b"\r\n")?;
+        write_arg(cmd, bytes, &mut buf);
     }
     Ok(())
 }
 
-pub(crate) fn write_header(
-    length: usize,
-    cmd: &mut (impl ?Sized + io::Write),
-    num_to_string: &mut ::itoa::Buffer,
-) -> io::Result<()> {
-    cmd.write_all(b"*")?;
+fn write_arg(cmd: &mut impl BufMut, bytes: &[u8], num_to_string: &mut ::itoa::Buffer) {
+    cmd.put(b"$".as_ref());
+    let s = num_to_string.format(bytes.len());
+    cmd.put(s.as_bytes());
+    cmd.put(b"\r\n".as_ref());
+
+    cmd.put(bytes);
+    cmd.put(b"\r\n".as_ref())
+}
+
+fn write_header(length: usize, cmd: &mut impl BufMut, num_to_string: &mut ::itoa::Buffer) {
+    cmd.put(b"*".as_ref());
     let s = num_to_string.format(length);
-    cmd.write_all(s.as_bytes())?;
-    cmd.write_all(b"\r\n")
+    cmd.put(s.as_bytes());
+    cmd.put(b"\r\n".as_ref())
 }
 
 impl RedisWrite for Cmd {
@@ -316,124 +308,6 @@ impl RedisWrite for Cmd {
 impl Default for Cmd {
     fn default() -> Cmd {
         Cmd::new()
-    }
-}
-
-#[cfg(feature = "aio")]
-impl Default for ThinCmdBuilder {
-    fn default() -> ThinCmdBuilder {
-        ThinCmdBuilder::new()
-    }
-}
-
-#[cfg(feature = "aio")]
-impl ThinCmdBuilder {
-    /// Creates a new empty command builder.
-    pub fn new() -> ThinCmdBuilder {
-        Self::with_capacity(0)
-    }
-
-    /// Creates a new empty command builder, and preallocate [capacity] bytes to it.
-    pub fn with_capacity(capacity: usize) -> ThinCmdBuilder {
-        ThinCmdBuilder {
-            data: BytesMut::with_capacity(capacity),
-            arg_count: 0,
-            num_to_string: ::itoa::Buffer::new(),
-        }
-    }
-
-    /// Appends an argument to the command. See [Cmd::arg] for more details.
-    #[inline]
-    pub fn arg<T: ToRedisArgs>(mut self, arg: T) -> Self {
-        arg.write_redis_args(&mut self);
-        self
-    }
-
-    /// Consume self and create a finalized ThinCmd;
-    pub fn build(self) -> ThinCmd {
-        ThinCmd {
-            data: self.data.freeze(),
-            arg_count: self.arg_count,
-        }
-    }
-
-    /// Sends the command as query to the connection and converts the
-    /// result to the target redis value. See [Cmd::query_async] for more details.
-    #[inline]
-    #[cfg(feature = "aio")]
-    pub async fn query_async<C, T: FromRedisValue>(self, con: &mut C) -> RedisResult<T>
-    where
-        C: crate::aio::ConnectionLike,
-    {
-        let val = con.req_packed_thin_command(self.build()).await?;
-        from_redis_value(&val)
-    }
-}
-
-#[cfg(feature = "aio")]
-impl RedisWrite for ThinCmdBuilder {
-    fn write_arg(&mut self, arg: &[u8]) {
-        self.arg_count += 1;
-        self.data.put(&b"$"[..]);
-        let s = self.num_to_string.format(arg.len());
-        self.data.put(s.as_bytes());
-        self.data.put(&b"\r\n"[..]);
-
-        self.data.put(arg);
-        self.data.put(&b"\r\n"[..]);
-    }
-}
-
-#[cfg(feature = "aio")]
-#[derive(Clone)]
-struct ThinCmdArgsIterator<'a> {
-    inner: &'a ThinCmd,
-    offset: usize,
-    iterated_arguments_count: usize,
-}
-
-#[cfg(feature = "aio")]
-impl<'a> ExactSizeIterator for ThinCmdArgsIterator<'a> {
-    fn len(&self) -> usize {
-        self.inner.arg_count - self.iterated_arguments_count
-    }
-}
-
-#[cfg(feature = "aio")]
-impl<'a> Iterator for ThinCmdArgsIterator<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len() == 0 {
-            return None;
-        }
-        assert!(self.offset < self.inner.data.len());
-        let start = self.offset;
-        let slice = &self.inner.data[start..];
-        assert!(slice[0] == b'$');
-        let index = slice.iter().position(|&char| char == b'\r').unwrap();
-        assert!(slice[index + 1] == b'\n');
-        let length: usize = std::str::from_utf8(&slice[1..index])
-            .unwrap()
-            .parse()
-            .expect("not a number");
-
-        self.offset += length + index + 4;
-        self.iterated_arguments_count += 1;
-        let start = index + 2;
-        Some(&slice[start..start + length])
-    }
-}
-
-#[cfg(feature = "aio")]
-impl ThinCmd {
-    /// Returns an iterator over the arguments in this command (including the command name itself)
-    pub fn args_iter(&self) -> impl Iterator<Item = &[u8]> + Clone + ExactSizeIterator {
-        ThinCmdArgsIterator {
-            inner: self,
-            offset: 0,
-            iterated_arguments_count: 0,
-        }
     }
 }
 
@@ -744,8 +618,32 @@ pub fn cmd(name: &str) -> Cmd {
 /// let cmd = redis::pack_command(&args);
 /// assert_eq!(cmd, b"*3\r\n$3\r\nSET\r\n$6\r\nmy_key\r\n$2\r\n42\r\n".to_vec());
 /// ```
-pub fn pack_command(args: &[Vec<u8>]) -> Vec<u8> {
-    encode_command(args.iter().map(|x| Arg::Simple(&x[..])), 0)
+pub fn pack_command<T: AsRef<[u8]>>(args: &[T]) -> Vec<u8> {
+    encode_command(args.iter().map(|x| Arg::Simple(x.as_ref())), 0)
+}
+
+#[cfg(feature = "aio")]
+///
+pub fn pack_command_to_bytes<T, I>(args: I) -> bytes::Bytes
+where
+    T: AsRef<[u8]>,
+    I: IntoIterator<Item = T> + Clone + ExactSizeIterator<Item = T>,
+{
+    let mut buf = ::itoa::Buffer::new();
+
+    let mut totlen = 1 + countdigits(args.len()) + 2;
+    for item in args.clone() {
+        totlen += bulklen(item.as_ref().len());
+    }
+
+    let mut bytes = BytesMut::with_capacity(totlen);
+
+    write_header(args.len(), &mut bytes, &mut buf);
+
+    for item in args {
+        write_arg(&mut bytes, item.as_ref(), &mut buf);
+    }
+    bytes.freeze()
 }
 
 /// Shortcut for creating a new pipeline.
@@ -772,31 +670,5 @@ mod tests {
         assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
         assert_eq!(c.arg_idx(3), None);
         assert_eq!(c.arg_idx(4), None);
-    }
-
-    #[cfg(feature = "aio")]
-    #[test]
-    fn test_thin_cmd_arg_iterator() {
-        use crate::ThinCmdBuilder;
-
-        let cmd = ThinCmdBuilder::new().build();
-        let mut iter = cmd.args_iter();
-        assert_eq!(iter.next(), None);
-
-        let cmd = ThinCmdBuilder::new().arg("SET").build();
-        let mut iter = cmd.args_iter();
-        assert_eq!(iter.next(), Some(&b"SET"[..]));
-        assert_eq!(iter.next(), None);
-
-        let cmd = ThinCmdBuilder::new()
-            .arg("SET")
-            .arg("this\runsafe\nstring\r\n")
-            .arg("ברור yay זה utf")
-            .build();
-        let mut iter = cmd.args_iter();
-        assert_eq!(iter.next(), Some(&b"SET"[..]));
-        assert_eq!(iter.next(), Some(&b"this\runsafe\nstring\r\n"[..]));
-        assert_eq!(iter.next(), Some("ברור yay זה utf".as_bytes()));
-        assert_eq!(iter.next(), None);
     }
 }

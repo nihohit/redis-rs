@@ -1,7 +1,5 @@
 use futures::{future, prelude::*, StreamExt};
-use redis::{
-    aio::MultiplexedConnection, cmd, AsyncCommands, ErrorKind, RedisResult, ThinCmdBuilder,
-};
+use redis::{aio::MultiplexedConnection, cmd, pack_command, AsyncCommands, ErrorKind, RedisResult};
 
 use crate::support::*;
 
@@ -33,31 +31,23 @@ fn test_args() {
 }
 
 #[test]
-fn test_args_in_thin_cmd() {
+fn test_args_in_bytes() {
+    use redis::aio::ConnectionLike;
+
     let ctx = TestContext::new();
     let connect = ctx.multiplexed_async_connection();
 
     block_on_all(connect.and_then(|mut con| async move {
-        ThinCmdBuilder::new()
-            .arg("SET")
-            .arg("key1")
-            .arg(b"foo")
-            .query_async(&mut con)
-            .await?;
-        ThinCmdBuilder::new()
-            .arg("SET")
-            .arg("key2")
-            .arg(b"bar")
-            .query_async(&mut con)
-            .await?;
+        let bytes = pack_command(vec!["SET", "key1", "foo"].as_ref());
+        con.req_packed_command_bytes(bytes.into()).await?;
+        let bytes = pack_command(vec!["SET", "key2", "bar"].as_ref());
+        con.req_packed_command_bytes(bytes.into()).await?;
+        let bytes = pack_command(vec!["MGET", "key1", "key2"].as_ref());
+        let result = con.req_packed_command_bytes(bytes.into()).await.unwrap();
+        let result: (String, Vec<u8>) = redis::from_redis_value(&result).unwrap();
 
-        let result = ThinCmdBuilder::new()
-            .arg("MGET")
-            .arg(&["key1", "key2"])
-            .query_async(&mut con)
-            .await;
-        assert_eq!(result, Ok(("foo".to_string(), b"bar".to_vec())));
-        result
+        assert_eq!(result, ("foo".to_string(), b"bar".to_vec()));
+        Ok(())
     }))
     .unwrap();
 }

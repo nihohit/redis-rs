@@ -1,5 +1,6 @@
 //! Adds experimental async IO support to redis.
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::collections::VecDeque;
 use std::fmt;
 use std::fmt::Debug;
@@ -31,10 +32,9 @@ use futures_util::{
 
 use pin_project_lite::pin_project;
 
-use crate::cmd::{cmd, Cmd, ThinCmd};
+use crate::cmd::{cmd, Cmd};
 use crate::connection::{ConnectionAddr, ConnectionInfo, Msg, RedisConnectionInfo};
 
-use crate::parser::CodecInput;
 #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
 use crate::parser::ValueCodec;
 use crate::types::{ErrorKind, FromRedisValue, RedisError, RedisFuture, RedisResult, Value};
@@ -512,10 +512,6 @@ pub trait ConnectionLike {
     /// reads the single response from it.
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value>;
 
-    /// Sends an already encoded (packed) command into the TCP socket and
-    /// reads the single response from it.
-    fn req_packed_thin_command(&mut self, cmd: ThinCmd) -> RedisFuture<Value>;
-
     /// Sends multiple already encoded (packed) command into the TCP socket
     /// and reads `count` responses from it.  This is used to implement
     /// pipelining.
@@ -525,6 +521,9 @@ pub trait ConnectionLike {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>>;
+
+    ///
+    fn req_packed_command_bytes(&mut self, bytes: bytes::Bytes) -> RedisFuture<Value>;
 
     /// Returns the database this connection is bound to.  Note that this
     /// information might be unreliable because it's initially cached and
@@ -604,7 +603,7 @@ where
         self.db
     }
 
-    fn req_packed_thin_command(&mut self, _cmd: ThinCmd) -> RedisFuture<Value> {
+    fn req_packed_command_bytes(&mut self, _bytes: Bytes) -> RedisFuture<Value> {
         todo!()
     }
 }
@@ -634,7 +633,7 @@ impl InFlight {
 
 // A single message sent through the pipeline
 struct PipelineMessage {
-    input: CodecInput,
+    input: Bytes,
     output: PipelineOutput,
     response_count: usize,
 }
@@ -672,9 +671,7 @@ where
 {
     fn new(sink_stream: T) -> Self
     where
-        T: Sink<CodecInput, Error = RedisError>
-            + Stream<Item = Result<Value, RedisError>>
-            + 'static,
+        T: Sink<Bytes, Error = RedisError> + Stream<Item = Result<Value, RedisError>> + 'static,
     {
         PipelineSink {
             sink_stream,
@@ -742,7 +739,7 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<CodecInput, Error = RedisError> + Stream<Item = Result<Value, RedisError>> + 'static,
+    T: Sink<Bytes, Error = RedisError> + Stream<Item = Result<Value, RedisError>> + 'static,
 {
     type Error = ();
 
@@ -830,9 +827,7 @@ where
 impl Pipeline {
     fn new<T>(sink_stream: T) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<CodecInput, Error = RedisError>
-            + Stream<Item = Result<Value, RedisError>>
-            + 'static,
+        T: Sink<Bytes, Error = RedisError> + Stream<Item = Result<Value, RedisError>> + 'static,
         T: Send + 'static,
         T::Item: Send,
         T::Error: Send,
@@ -848,7 +843,7 @@ impl Pipeline {
     }
 
     // `None` means that the stream was out of items causing that poll loop to shut down.
-    async fn send(&mut self, item: CodecInput) -> Result<Value, Option<RedisError>> {
+    async fn send(&mut self, item: Bytes) -> Result<Value, Option<RedisError>> {
         self.send_recv_multiple(item, 1)
             .await
             // We can unwrap since we do a request for `1` item
@@ -857,7 +852,7 @@ impl Pipeline {
 
     async fn send_recv_multiple(
         &mut self,
-        input: CodecInput,
+        input: Bytes,
         count: usize,
     ) -> Result<Vec<Value>, Option<RedisError>> {
         let (sender, receiver) = oneshot::channel();
@@ -945,7 +940,7 @@ impl MultiplexedConnection {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub(crate) async fn send_codec_input(&mut self, input: CodecInput) -> RedisResult<Value> {
+    pub(crate) async fn send_bytes(&mut self, input: Bytes) -> RedisResult<Value> {
         let value = self.pipeline.send(input).await.map_err(|err| {
             err.unwrap_or_else(|| RedisError::from(io::Error::from(io::ErrorKind::BrokenPipe)))
         })?;
@@ -955,13 +950,13 @@ impl MultiplexedConnection {
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
     pub async fn send_packed_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
-        self.send_codec_input(cmd.get_packed_command().into()).await
+        self.send_bytes(cmd.get_packed_command().into()).await
     }
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_thin_command(&mut self, cmd: ThinCmd) -> RedisResult<Value> {
-        self.send_codec_input(cmd.into()).await
+    pub async fn send_packed_command_bytes(&mut self, cmd: Bytes) -> RedisResult<Value> {
+        self.send_bytes(cmd).await
     }
 
     /// Sends multiple already encoded (packed) command into the TCP socket
@@ -988,11 +983,11 @@ impl MultiplexedConnection {
 
 impl ConnectionLike for MultiplexedConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        (async move { self.send_codec_input(cmd.get_packed_command().into()).await }).boxed()
+        (async move { self.send_bytes(cmd.get_packed_command().into()).await }).boxed()
     }
 
-    fn req_packed_thin_command(&mut self, cmd: ThinCmd) -> RedisFuture<Value> {
-        (async move { self.send_codec_input(cmd.into()).await }).boxed()
+    fn req_packed_command_bytes(&mut self, bytes: bytes::Bytes) -> RedisFuture<Value> {
+        (async move { self.send_bytes(bytes).await }).boxed()
     }
 
     fn req_packed_commands<'a>(
@@ -1139,7 +1134,7 @@ mod connection_manager {
 
         /// Sends an already encoded (packed) command into the TCP socket and
         /// reads the single response from it.
-        async fn send_codec_input(&mut self, codec_input: CodecInput) -> RedisResult<Value> {
+        async fn send_bytes(&mut self, bytes: Bytes) -> RedisResult<Value> {
             // Clone connection to avoid having to lock the ArcSwap in write mode
             let guard = self.connection.load();
             let connection_result = (**guard)
@@ -1147,7 +1142,7 @@ mod connection_manager {
                 .await
                 .map_err(|e| e.clone_mostly("Reconnecting failed"));
             reconnect_if_io_error!(self, connection_result, guard);
-            let result = connection_result?.send_codec_input(codec_input).await;
+            let result = connection_result?.send_bytes(bytes).await;
             reconnect_if_dropped!(self, &result, guard);
             result
         }
@@ -1155,13 +1150,13 @@ mod connection_manager {
         /// Sends an already encoded (packed) command into the TCP socket and
         /// reads the single response from it.
         pub async fn send_packed_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
-            self.send_codec_input(cmd.get_packed_command().into()).await
+            self.send_bytes(cmd.get_packed_command().into()).await
         }
 
         /// Sends an already encoded (packed) command into the TCP socket and
         /// reads the single response from it.
-        pub async fn send_packed_thin_command(&mut self, cmd: ThinCmd) -> RedisResult<Value> {
-            self.send_codec_input(cmd.into()).await
+        pub async fn send_packed_thin_command(&mut self, cmd: Bytes) -> RedisResult<Value> {
+            self.send_bytes(cmd).await
         }
 
         /// Sends multiple already encoded (packed) command into the TCP socket
@@ -1190,7 +1185,7 @@ mod connection_manager {
 
     impl ConnectionLike for ConnectionManager {
         fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-            (async move { self.send_codec_input(cmd.get_packed_command().into()).await }).boxed()
+            (async move { self.send_bytes(cmd.get_packed_command().into()).await }).boxed()
         }
 
         fn req_packed_commands<'a>(
@@ -1206,8 +1201,8 @@ mod connection_manager {
             self.client.connection_info().redis.db
         }
 
-        fn req_packed_thin_command(&mut self, cmd: ThinCmd) -> RedisFuture<Value> {
-            (async move { self.send_codec_input(cmd.into()).await }).boxed()
+        fn req_packed_command_bytes(&mut self, bytes: Bytes) -> RedisFuture<Value> {
+            (async move { self.send_bytes(bytes).await }).boxed()
         }
     }
 }

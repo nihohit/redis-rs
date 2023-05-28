@@ -44,6 +44,7 @@ use crate::{
 
 #[cfg(all(not(feature = "tokio-comp"), feature = "async-std-comp"))]
 use crate::aio::{async_std::AsyncStd, RedisRuntime};
+use bytes::Bytes;
 use futures::{
     future::{self, BoxFuture},
     prelude::*,
@@ -850,7 +851,7 @@ where
         0
     }
 
-    fn req_packed_thin_command(&mut self, _cmd: crate::ThinCmd) -> RedisFuture<Value> {
+    fn req_packed_command_bytes(&mut self, _bytes: Bytes) -> RedisFuture<Value> {
         todo!()
     }
 }
