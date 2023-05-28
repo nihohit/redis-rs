@@ -1,3 +1,4 @@
+#[cfg(feature = "aio")]
 use bytes::{BufMut, Bytes, BytesMut};
 #[cfg(feature = "aio")]
 use futures_util::{
@@ -31,6 +32,7 @@ pub struct Cmd {
     cursor: Option<u64>,
 }
 
+#[cfg(feature = "aio")]
 /// A more memory-efficient representative of redis commands than [Cmd].
 #[derive(Clone)]
 pub struct ThinCmd {
@@ -39,6 +41,7 @@ pub struct ThinCmd {
     pub(crate) arg_count: usize,
 }
 
+#[cfg(feature = "aio")]
 /// A builder for [ThinCmd].
 #[derive(Clone)]
 pub struct ThinCmdBuilder {
@@ -308,12 +311,14 @@ impl Default for Cmd {
     }
 }
 
+#[cfg(feature = "aio")]
 impl Default for ThinCmdBuilder {
     fn default() -> ThinCmdBuilder {
         ThinCmdBuilder::new()
     }
 }
 
+#[cfg(feature = "aio")]
 impl ThinCmdBuilder {
     /// Creates a new empty command builder.
     pub fn new() -> ThinCmdBuilder {
@@ -331,8 +336,8 @@ impl ThinCmdBuilder {
 
     /// Appends an argument to the command. See [Cmd::arg] for more details.
     #[inline]
-    pub fn arg<T: ToRedisArgs>(&mut self, arg: T) -> &mut Self {
-        arg.write_redis_args(self);
+    pub fn arg<T: ToRedisArgs>(mut self, arg: T) -> Self {
+        arg.write_redis_args(&mut self);
         self
     }
 
@@ -357,6 +362,7 @@ impl ThinCmdBuilder {
     }
 }
 
+#[cfg(feature = "aio")]
 impl RedisWrite for ThinCmdBuilder {
     fn write_arg(&mut self, arg: &[u8]) {
         self.arg_count += 1;
@@ -367,6 +373,59 @@ impl RedisWrite for ThinCmdBuilder {
 
         self.data.put(arg);
         self.data.put(&b"\r\n"[..]);
+    }
+}
+
+#[cfg(feature = "aio")]
+#[derive(Clone)]
+struct ThinCmdArgsIterator<'a> {
+    inner: &'a ThinCmd,
+    offset: usize,
+    iterated_arguments_count: usize,
+}
+
+#[cfg(feature = "aio")]
+impl<'a> ExactSizeIterator for ThinCmdArgsIterator<'a> {
+    fn len(&self) -> usize {
+        self.inner.arg_count - self.iterated_arguments_count
+    }
+}
+
+#[cfg(feature = "aio")]
+impl<'a> Iterator for ThinCmdArgsIterator<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.len() == 0 {
+            return None;
+        }
+        assert!(self.offset < self.inner.data.len());
+        let start = self.offset;
+        let slice = &self.inner.data[start..];
+        assert!(slice[0] == b'$');
+        let index = slice.iter().position(|&char| char == b'\r').unwrap();
+        assert!(slice[index + 1] == b'\n');
+        let length: usize = std::str::from_utf8(&slice[1..index])
+            .unwrap()
+            .parse()
+            .expect("not a number");
+
+        self.offset += length + index + 4;
+        self.iterated_arguments_count += 1;
+        let start = index + 2;
+        Some(&slice[start..start + length])
+    }
+}
+
+#[cfg(feature = "aio")]
+impl ThinCmd {
+    /// Returns an iterator over the arguments in this command (including the command name itself)
+    pub fn args_iter(&self) -> impl Iterator<Item = &[u8]> + Clone + ExactSizeIterator {
+        ThinCmdArgsIterator {
+            inner: self,
+            offset: 0,
+            iterated_arguments_count: 0,
+        }
     }
 }
 
@@ -705,5 +764,31 @@ mod tests {
         assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
         assert_eq!(c.arg_idx(3), None);
         assert_eq!(c.arg_idx(4), None);
+    }
+
+    #[cfg(feature = "aio")]
+    #[test]
+    fn test_thin_cmd_arg_iterator() {
+        use crate::ThinCmdBuilder;
+
+        let cmd = ThinCmdBuilder::new().build();
+        let mut iter = cmd.args_iter();
+        assert_eq!(iter.next(), None);
+
+        let cmd = ThinCmdBuilder::new().arg("SET").build();
+        let mut iter = cmd.args_iter();
+        assert_eq!(iter.next(), Some(&b"SET"[..]));
+        assert_eq!(iter.next(), None);
+
+        let cmd = ThinCmdBuilder::new()
+            .arg("SET")
+            .arg("this\runsafe\nstring\r\n")
+            .arg("ברור yay זה utf")
+            .build();
+        let mut iter = cmd.args_iter();
+        assert_eq!(iter.next(), Some(&b"SET"[..]));
+        assert_eq!(iter.next(), Some(&b"this\runsafe\nstring\r\n"[..]));
+        assert_eq!(iter.next(), Some("ברור yay זה utf".as_bytes()));
+        assert_eq!(iter.next(), None);
     }
 }
