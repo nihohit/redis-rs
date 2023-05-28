@@ -31,17 +31,20 @@ pub struct Cmd {
     cursor: Option<u64>,
 }
 
+/// A more memory-efficient representative of redis commands than [Cmd].
+#[derive(Clone)]
+pub struct ThinCmd {
+    /// bytes representing the packed command.
+    pub data: Bytes,
+    pub(crate) arg_count: usize,
+}
+
+/// A builder for [ThinCmd].
 #[derive(Clone)]
 pub struct ThinCmdBuilder {
     pub(crate) data: BytesMut,
     pub(crate) arg_count: usize,
     pub(crate) num_to_string: ::itoa::Buffer,
-}
-
-#[derive(Clone)]
-pub struct ThinCmd {
-    pub(crate) data: Bytes,
-    pub(crate) arg_count: usize,
 }
 
 /// Represents a redis iterator.
@@ -213,6 +216,7 @@ pub(crate) fn countdigits(mut v: usize) -> usize {
     }
 }
 
+/// Return the total length of a bulk arg when written to bytes.
 #[inline]
 fn bulklen(len: usize) -> usize {
     1 + countdigits(len) + 2 + len + 2
@@ -311,11 +315,12 @@ impl Default for ThinCmdBuilder {
 }
 
 impl ThinCmdBuilder {
-    /// Creates a new empty command.
+    /// Creates a new empty command builder.
     pub fn new() -> ThinCmdBuilder {
         Self::with_capacity(0)
     }
 
+    /// Creates a new empty command builder, and preallocate [capacity] bytes to it.
     pub fn with_capacity(capacity: usize) -> ThinCmdBuilder {
         ThinCmdBuilder {
             data: BytesMut::with_capacity(capacity),
@@ -324,24 +329,37 @@ impl ThinCmdBuilder {
         }
     }
 
+    /// Appends an argument to the command. See [Cmd::arg] for more details.
     #[inline]
     pub fn arg<T: ToRedisArgs>(&mut self, arg: T) -> &mut Self {
-        self.arg_count += 1;
         arg.write_redis_args(self);
         self
     }
 
+    /// Consume self and create a finalized ThinCmd;
     pub fn build(self) -> ThinCmd {
         ThinCmd {
             data: self.data.freeze(),
             arg_count: self.arg_count,
-            // cursor: self.cursor,
         }
+    }
+
+    /// Sends the command as query to the connection and converts the
+    /// result to the target redis value. See [Cmd::query_async] for more details.
+    #[inline]
+    #[cfg(feature = "aio")]
+    pub async fn query_async<C, T: FromRedisValue>(self, con: &mut C) -> RedisResult<T>
+    where
+        C: crate::aio::ConnectionLike,
+    {
+        let val = con.req_packed_thin_command(self.build()).await?;
+        from_redis_value(&val)
     }
 }
 
 impl RedisWrite for ThinCmdBuilder {
     fn write_arg(&mut self, arg: &[u8]) {
+        self.arg_count += 1;
         self.data.put(&b"$"[..]);
         let s = self.num_to_string.format(arg.len());
         self.data.put(s.as_bytes());
