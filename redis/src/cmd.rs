@@ -221,7 +221,7 @@ pub(crate) fn countdigits(mut v: usize) -> usize {
 
 /// Return the total length of a bulk arg when written to bytes.
 #[inline]
-fn bulklen(len: usize) -> usize {
+pub fn bulklen(len: usize) -> usize {
     1 + countdigits(len) + 2 + len + 2
 }
 
