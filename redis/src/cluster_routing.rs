@@ -7,6 +7,7 @@ use rand::thread_rng;
 use crate::cmd::{Arg, Cmd};
 use crate::commands::is_readonly_cmd;
 use crate::types::Value;
+use crate::ThinCmd;
 
 pub(crate) const SLOT_SIZE: u16 = 16384;
 
@@ -121,6 +122,18 @@ impl Routable for Value {
             }),
             _ => None,
         }
+    }
+}
+
+#[cfg(feature = "aio")]
+impl Routable for ThinCmd {
+    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+        self.args_iter().skip(idx).take(1).next()
+    }
+
+    fn position(&self, candidate: &[u8]) -> Option<usize> {
+        self.args_iter()
+            .position(|arg| arg.eq_ignore_ascii_case(candidate))
     }
 }
 
