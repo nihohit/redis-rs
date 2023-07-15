@@ -650,18 +650,25 @@ pub fn pack_command<T: AsRef<[u8]>>(args: &[T]) -> Vec<u8> {
 /// let expected: bytes::Bytes = (&b"*3\r\n$3\r\nSET\r\n$6\r\nmy_key\r\n$2\r\n42\r\n"[..]).into();
 /// assert_eq!(cmd, expected);
 /// ```
-pub fn pack_command_to_bytes<T, I>(args: I, num_to_string: Option<::itoa::Buffer>) -> Bytes
+pub fn pack_command_to_bytes<T, I>(args: I, num_to_string: Option<&mut itoa::Buffer>) -> Bytes
 where
     T: AsRef<[u8]>,
     I: IntoIterator<Item = T> + Clone + ExactSizeIterator<Item = T>,
 {
-    let mut num_to_string = num_to_string.unwrap_or_else(::itoa::Buffer::new);
+    let mut buf_holder;
+    let num_to_string = match num_to_string {
+        Some(buf) => buf,
+        None => {
+            buf_holder = ::itoa::Buffer::new();
+            &mut buf_holder
+        }
+    };
 
     let length = args_len(args.clone());
 
     let mut bytes = BytesMut::with_capacity(length);
 
-    pack_command_to_preallocated_bytes(args, &mut bytes, &mut num_to_string);
+    pack_command_to_preallocated_bytes(args, &mut bytes, num_to_string);
     assert!(bytes.len() == length);
     bytes.freeze()
 }
