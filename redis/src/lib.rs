@@ -450,6 +450,9 @@ mod cluster_pipeline;
 #[cfg(feature = "cluster")]
 pub mod cluster_routing;
 
+mod known_commands;
+pub use known_commands::KnownCommand;
+
 #[cfg(feature = "cluster")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
 pub mod cluster_topology;

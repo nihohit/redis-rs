@@ -11,6 +11,7 @@ use std::{fmt, io};
 use crate::connection::ConnectionLike;
 use crate::pipeline::Pipeline;
 use crate::types::{from_redis_value, FromRedisValue, RedisResult, RedisWrite, ToRedisArgs};
+use crate::KnownCommand;
 
 /// An argument to a redis command
 #[derive(Clone)]
@@ -30,6 +31,7 @@ pub struct Cmd {
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
+    pub(crate) known_command: Option<KnownCommand>,
 }
 
 /// Represents a redis iterator.
@@ -327,6 +329,18 @@ impl Cmd {
             args: vec![],
             cursor: None,
             no_response: false,
+            known_command: None,
+        }
+    }
+
+    /// Create a new command, from a known Redis command.
+    pub fn known_command(known_command: KnownCommand) -> Cmd {
+        Cmd {
+            data: vec![],
+            args: vec![],
+            cursor: None,
+            no_response: false,
+            known_command: Some(known_command),
         }
     }
 
@@ -337,6 +351,7 @@ impl Cmd {
             args: Vec::with_capacity(arg_count),
             cursor: None,
             no_response: false,
+            known_command: None,
         }
     }
 
@@ -530,23 +545,30 @@ impl Cmd {
         self.query::<()>(con).unwrap();
     }
 
+    fn known_args(&self) -> &[&'static [u8]] {
+        self.known_command
+            .map(|cmd| cmd.as_args())
+            .unwrap_or_default()
+    }
+
     /// Returns an iterator over the arguments in this command (including the command name itself)
     pub fn args_iter(&self) -> impl Iterator<Item = Arg<&[u8]>> + Clone + ExactSizeIterator {
-        let mut prev = 0;
-        self.args.iter().map(move |arg| match *arg {
-            Arg::Simple(i) => {
-                let arg = Arg::Simple(&self.data[prev..i]);
-                prev = i;
-                arg
-            }
-
-            Arg::Cursor => Arg::Cursor,
-        })
+        ArgsIterator {
+            cmd: self,
+            prev_position: 0,
+            next_index: 0,
+        }
     }
 
     // Get a reference to the argument at `idx`
     #[cfg(feature = "cluster")]
-    pub(crate) fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+    pub(crate) fn arg_idx(&self, mut idx: usize) -> Option<&[u8]> {
+        let known_args = self.known_args();
+        if let Some(arg) = known_args.get(idx) {
+            return Some(arg);
+        }
+        idx -= known_args.len();
+
         if idx >= self.args.len() {
             return None;
         }
@@ -580,6 +602,52 @@ impl Cmd {
     #[inline]
     pub fn is_no_response(&self) -> bool {
         self.no_response
+    }
+}
+
+#[derive(Clone)]
+struct ArgsIterator<'a> {
+    cmd: &'a Cmd,
+    prev_position: usize,
+    next_index: usize,
+}
+
+impl<'a> Iterator for ArgsIterator<'a> {
+    type Item = Arg<&'a [u8]>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let known_args = self.cmd.known_args();
+        if let Some(arg) = known_args.get(self.next_index) {
+            self.next_index += 1;
+            return Some(Arg::Simple(*arg));
+        }
+
+        let index = self.next_index - known_args.len();
+        if let Some(arg) = self.cmd.args.get(index) {
+            self.next_index += 1;
+            Some(match *arg {
+                Arg::Simple(i) => {
+                    let arg = Arg::Simple(&self.cmd.data[self.prev_position..i]);
+                    self.prev_position = i;
+                    arg
+                }
+
+                Arg::Cursor => Arg::Cursor,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> ExactSizeIterator for ArgsIterator<'a> {
+    fn len(&self) -> usize {
+        self.cmd.known_args().len() + self.cmd.args.len() - self.next_index
     }
 }
 
@@ -626,6 +694,8 @@ pub fn pipe() -> Pipeline {
 #[cfg(test)]
 #[cfg(feature = "cluster")]
 mod tests {
+    use crate::{Arg, KnownCommand};
+
     use super::Cmd;
 
     #[test]
@@ -642,5 +712,68 @@ mod tests {
         assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
         assert_eq!(c.arg_idx(3), None);
         assert_eq!(c.arg_idx(4), None);
+    }
+
+    #[test]
+    fn test_cmd_arg_iterator() {
+        let mut c = Cmd::new();
+        let mut iter = c.args_iter();
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+
+        drop(iter);
+        c.arg("SET");
+        let mut iter = c.args_iter();
+        assert_eq!(iter.len(), 1);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"SET"))));
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+
+        drop(iter);
+        c.arg("foo").arg("42");
+        let mut iter = c.args_iter();
+        assert_eq!(iter.len(), 3);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"SET"))));
+        assert_eq!(iter.len(), 2);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"foo"))));
+        assert_eq!(iter.len(), 1);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"42"))));
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_cmd_arg_idx_with_known_command() {
+        let mut c = Cmd::known_command(KnownCommand::Set);
+        assert_eq!(c.arg_idx(0), Some(&b"SET"[..]));
+        assert_eq!(c.arg_idx(1), None);
+
+        c.arg("foo").arg("42");
+        assert_eq!(c.arg_idx(1), Some(&b"foo"[..]));
+        assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
+        assert_eq!(c.arg_idx(3), None);
+        assert_eq!(c.arg_idx(4), None);
+    }
+
+    #[test]
+    fn test_cmd_arg_iterator_with_known_command() {
+        let mut c = Cmd::known_command(KnownCommand::Set);
+        let mut iter = c.args_iter();
+        assert_eq!(iter.len(), 1);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"SET"))));
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+
+        drop(iter);
+        c.arg("foo").arg("42");
+        let mut iter = c.args_iter();
+        assert_eq!(iter.len(), 3);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"SET"))));
+        assert_eq!(iter.len(), 2);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"foo"))));
+        assert_eq!(iter.len(), 1);
+        assert!(matches!(iter.next(), Some(Arg::Simple(b"42"))));
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
     }
 }

@@ -4,6 +4,7 @@ use crate::cmd::{cmd, Cmd, Iter};
 use crate::connection::{Connection, ConnectionLike, Msg};
 use crate::pipeline::Pipeline;
 use crate::types::{FromRedisValue, NumericBehavior, RedisResult, ToRedisArgs, RedisWrite, Expiry, SetExpiry, ExistenceCheck};
+use crate::KnownCommand;
 
 #[macro_use]
 mod macros;
@@ -37,124 +38,124 @@ implement_commands! {
 
     /// Get the value of a key.  If key is a vec this becomes an `MGET`.
     fn get<K: ToRedisArgs>(key: K) {
-        cmd(if key.is_single_arg() { "GET" } else { "MGET" }).arg(key)
+        Cmd::known_command(if key.is_single_arg() { KnownCommand::Get } else { KnownCommand::Mget }).arg(key)
     }
 
     /// Get values of keys
     fn mget<K: ToRedisArgs>(key: K){
-        cmd("MGET").arg(key)
+        Cmd::known_command(KnownCommand::Mget).arg(key)
     }
 
     /// Gets all keys matching pattern
     fn keys<K: ToRedisArgs>(key: K) {
-        cmd("KEYS").arg(key)
+        Cmd::known_command(KnownCommand::Keys).arg(key)
     }
 
     /// Set the string value of a key.
     fn set<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("SET").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Set).arg(key).arg(value)
     }
 
     /// Set the string value of a key with options.
     fn set_options<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V, options: SetOptions) {
-        cmd("SET").arg(key).arg(value).arg(options)
+        Cmd::known_command(KnownCommand::Set).arg(key).arg(value).arg(options)
     }
 
     /// Sets multiple keys to their values.
     #[allow(deprecated)]
     #[deprecated(since = "0.22.4", note = "Renamed to mset() to reflect Redis name")]
     fn set_multiple<K: ToRedisArgs, V: ToRedisArgs>(items: &'a [(K, V)]) {
-        cmd("MSET").arg(items)
+        Cmd::known_command(KnownCommand::Mset).arg(items)
     }
 
     /// Sets multiple keys to their values.
     fn mset<K: ToRedisArgs, V: ToRedisArgs>(items: &'a [(K, V)]) {
-        cmd("MSET").arg(items)
+        Cmd::known_command(KnownCommand::Mset).arg(items)
     }
 
     /// Set the value and expiration of a key.
     fn set_ex<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V, seconds: u64) {
-        cmd("SETEX").arg(key).arg(seconds).arg(value)
+        Cmd::known_command(KnownCommand::Setex).arg(key).arg(seconds).arg(value)
     }
 
     /// Set the value and expiration in milliseconds of a key.
     fn pset_ex<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V, milliseconds: u64) {
-        cmd("PSETEX").arg(key).arg(milliseconds).arg(value)
+        Cmd::known_command(KnownCommand::Psetex).arg(key).arg(milliseconds).arg(value)
     }
 
     /// Set the value of a key, only if the key does not exist
     fn set_nx<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("SETNX").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Setnx).arg(key).arg(value)
     }
 
     /// Sets multiple keys to their values failing if at least one already exists.
     fn mset_nx<K: ToRedisArgs, V: ToRedisArgs>(items: &'a [(K, V)]) {
-        cmd("MSETNX").arg(items)
+        Cmd::known_command(KnownCommand::Msetnx).arg(items)
     }
 
     /// Set the string value of a key and return its old value.
     fn getset<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("GETSET").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Getset).arg(key).arg(value)
     }
 
     /// Get a range of bytes/substring from the value of a key. Negative values provide an offset from the end of the value.
     fn getrange<K: ToRedisArgs>(key: K, from: isize, to: isize) {
-        cmd("GETRANGE").arg(key).arg(from).arg(to)
+        Cmd::known_command(KnownCommand::Getrange).arg(key).arg(from).arg(to)
     }
 
     /// Overwrite the part of the value stored in key at the specified offset.
     fn setrange<K: ToRedisArgs, V: ToRedisArgs>(key: K, offset: isize, value: V) {
-        cmd("SETRANGE").arg(key).arg(offset).arg(value)
+        Cmd::known_command(KnownCommand::Setrange).arg(key).arg(offset).arg(value)
     }
 
     /// Delete one or more keys.
     fn del<K: ToRedisArgs>(key: K) {
-        cmd("DEL").arg(key)
+        Cmd::known_command(KnownCommand::Del).arg(key)
     }
 
     /// Determine if a key exists.
     fn exists<K: ToRedisArgs>(key: K) {
-        cmd("EXISTS").arg(key)
+        Cmd::known_command(KnownCommand::Exists).arg(key)
     }
 
     /// Determine the type of a key.
     fn key_type<K: ToRedisArgs>(key: K) {
-        cmd("TYPE").arg(key)
+        Cmd::known_command(KnownCommand::Type).arg(key)
     }
 
     /// Set a key's time to live in seconds.
     fn expire<K: ToRedisArgs>(key: K, seconds: i64) {
-        cmd("EXPIRE").arg(key).arg(seconds)
+        Cmd::known_command(KnownCommand::Expire).arg(key).arg(seconds)
     }
 
     /// Set the expiration for a key as a UNIX timestamp.
     fn expire_at<K: ToRedisArgs>(key: K, ts: i64) {
-        cmd("EXPIREAT").arg(key).arg(ts)
+        Cmd::known_command(KnownCommand::Expireat).arg(key).arg(ts)
     }
 
     /// Set a key's time to live in milliseconds.
     fn pexpire<K: ToRedisArgs>(key: K, ms: i64) {
-        cmd("PEXPIRE").arg(key).arg(ms)
+        Cmd::known_command(KnownCommand::Pexpire).arg(key).arg(ms)
     }
 
     /// Set the expiration for a key as a UNIX timestamp in milliseconds.
     fn pexpire_at<K: ToRedisArgs>(key: K, ts: i64) {
-        cmd("PEXPIREAT").arg(key).arg(ts)
+        Cmd::known_command(KnownCommand::Pexpireat).arg(key).arg(ts)
     }
 
     /// Remove the expiration from a key.
     fn persist<K: ToRedisArgs>(key: K) {
-        cmd("PERSIST").arg(key)
+        Cmd::known_command(KnownCommand::Persist).arg(key)
     }
 
     /// Get the expiration time of a key.
     fn ttl<K: ToRedisArgs>(key: K) {
-        cmd("TTL").arg(key)
+        Cmd::known_command(KnownCommand::Ttl).arg(key)
     }
 
     /// Get the expiration time of a key in milliseconds.
     fn pttl<K: ToRedisArgs>(key: K) {
-        cmd("PTTL").arg(key)
+        Cmd::known_command(KnownCommand::Pttl).arg(key)
     }
 
     /// Get the value of a key and set expiration
@@ -167,159 +168,159 @@ implement_commands! {
             Expiry::PERSIST => ("PERSIST", None),
         };
 
-        cmd("GETEX").arg(key).arg(option).arg(time_arg)
+        Cmd::known_command(KnownCommand::Getex).arg(key).arg(option).arg(time_arg)
     }
 
     /// Get the value of a key and delete it
     fn get_del<K: ToRedisArgs>(key: K) {
-        cmd("GETDEL").arg(key)
+        Cmd::known_command(KnownCommand::Getdel).arg(key)
     }
 
     /// Rename a key.
     fn rename<K: ToRedisArgs, N: ToRedisArgs>(key: K, new_key: N) {
-        cmd("RENAME").arg(key).arg(new_key)
+        Cmd::known_command(KnownCommand::Rename).arg(key).arg(new_key)
     }
 
     /// Rename a key, only if the new key does not exist.
     fn rename_nx<K: ToRedisArgs, N: ToRedisArgs>(key: K, new_key: N) {
-        cmd("RENAMENX").arg(key).arg(new_key)
+        Cmd::known_command(KnownCommand::Renamenx).arg(key).arg(new_key)
     }
 
     /// Unlink one or more keys.
     fn unlink<K: ToRedisArgs>(key: K) {
-        cmd("UNLINK").arg(key)
+        Cmd::known_command(KnownCommand::Unlink).arg(key)
     }
 
     // common string operations
 
     /// Append a value to a key.
     fn append<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("APPEND").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Append).arg(key).arg(value)
     }
 
     /// Increment the numeric value of a key by the given amount.  This
     /// issues a `INCRBY` or `INCRBYFLOAT` depending on the type.
     fn incr<K: ToRedisArgs, V: ToRedisArgs>(key: K, delta: V) {
-        cmd(if delta.describe_numeric_behavior() == NumericBehavior::NumberIsFloat {
-            "INCRBYFLOAT"
+        Cmd::known_command(if delta.describe_numeric_behavior() == NumericBehavior::NumberIsFloat {
+            KnownCommand::Incrbyfloat
         } else {
-            "INCRBY"
+            KnownCommand::Incrby
         }).arg(key).arg(delta)
     }
 
     /// Decrement the numeric value of a key by the given amount.
     fn decr<K: ToRedisArgs, V: ToRedisArgs>(key: K, delta: V) {
-        cmd("DECRBY").arg(key).arg(delta)
+        Cmd::known_command(KnownCommand::Decrby).arg(key).arg(delta)
     }
 
     /// Sets or clears the bit at offset in the string value stored at key.
     fn setbit<K: ToRedisArgs>(key: K, offset: usize, value: bool) {
-        cmd("SETBIT").arg(key).arg(offset).arg(i32::from(value))
+        Cmd::known_command(KnownCommand::Setbit).arg(key).arg(offset).arg(i32::from(value))
     }
 
     /// Returns the bit value at offset in the string value stored at key.
     fn getbit<K: ToRedisArgs>(key: K, offset: usize) {
-        cmd("GETBIT").arg(key).arg(offset)
+        Cmd::known_command(KnownCommand::Getbit).arg(key).arg(offset)
     }
 
     /// Count set bits in a string.
     fn bitcount<K: ToRedisArgs>(key: K) {
-        cmd("BITCOUNT").arg(key)
+        Cmd::known_command(KnownCommand::Bitcount).arg(key)
     }
 
     /// Count set bits in a string in a range.
     fn bitcount_range<K: ToRedisArgs>(key: K, start: usize, end: usize) {
-        cmd("BITCOUNT").arg(key).arg(start).arg(end)
+        Cmd::known_command(KnownCommand::Bitcount).arg(key).arg(start).arg(end)
     }
 
     /// Perform a bitwise AND between multiple keys (containing string values)
     /// and store the result in the destination key.
     fn bit_and<D: ToRedisArgs, S: ToRedisArgs>(dstkey: D, srckeys: S) {
-        cmd("BITOP").arg("AND").arg(dstkey).arg(srckeys)
+        Cmd::known_command(KnownCommand::Bitop).arg("AND").arg(dstkey).arg(srckeys)
     }
 
     /// Perform a bitwise OR between multiple keys (containing string values)
     /// and store the result in the destination key.
     fn bit_or<D: ToRedisArgs, S: ToRedisArgs>(dstkey: D, srckeys: S) {
-        cmd("BITOP").arg("OR").arg(dstkey).arg(srckeys)
+        Cmd::known_command(KnownCommand::Bitop).arg("OR").arg(dstkey).arg(srckeys)
     }
 
     /// Perform a bitwise XOR between multiple keys (containing string values)
     /// and store the result in the destination key.
     fn bit_xor<D: ToRedisArgs, S: ToRedisArgs>(dstkey: D, srckeys: S) {
-        cmd("BITOP").arg("XOR").arg(dstkey).arg(srckeys)
+        Cmd::known_command(KnownCommand::Bitop).arg("XOR").arg(dstkey).arg(srckeys)
     }
 
     /// Perform a bitwise NOT of the key (containing string values)
     /// and store the result in the destination key.
     fn bit_not<D: ToRedisArgs, S: ToRedisArgs>(dstkey: D, srckey: S) {
-        cmd("BITOP").arg("NOT").arg(dstkey).arg(srckey)
+        Cmd::known_command(KnownCommand::Bitop).arg("NOT").arg(dstkey).arg(srckey)
     }
 
     /// Get the length of the value stored in a key.
     fn strlen<K: ToRedisArgs>(key: K) {
-        cmd("STRLEN").arg(key)
+        Cmd::known_command(KnownCommand::Strlen).arg(key)
     }
 
     // hash operations
 
     /// Gets a single (or multiple) fields from a hash.
     fn hget<K: ToRedisArgs, F: ToRedisArgs>(key: K, field: F) {
-        cmd(if field.is_single_arg() { "HGET" } else { "HMGET" }).arg(key).arg(field)
+        Cmd::known_command(if field.is_single_arg() { KnownCommand::Hget } else { KnownCommand::Hmget }).arg(key).arg(field)
     }
 
     /// Deletes a single (or multiple) fields from a hash.
     fn hdel<K: ToRedisArgs, F: ToRedisArgs>(key: K, field: F) {
-        cmd("HDEL").arg(key).arg(field)
+        Cmd::known_command(KnownCommand::Hdel).arg(key).arg(field)
     }
 
     /// Sets a single field in a hash.
     fn hset<K: ToRedisArgs, F: ToRedisArgs, V: ToRedisArgs>(key: K, field: F, value: V) {
-        cmd("HSET").arg(key).arg(field).arg(value)
+        Cmd::known_command(KnownCommand::Hset).arg(key).arg(field).arg(value)
     }
 
     /// Sets a single field in a hash if it does not exist.
     fn hset_nx<K: ToRedisArgs, F: ToRedisArgs, V: ToRedisArgs>(key: K, field: F, value: V) {
-        cmd("HSETNX").arg(key).arg(field).arg(value)
+        Cmd::known_command(KnownCommand::Hsetnx).arg(key).arg(field).arg(value)
     }
 
     /// Sets a multiple fields in a hash.
     fn hset_multiple<K: ToRedisArgs, F: ToRedisArgs, V: ToRedisArgs>(key: K, items: &'a [(F, V)]) {
-        cmd("HMSET").arg(key).arg(items)
+        Cmd::known_command(KnownCommand::Hmset).arg(key).arg(items)
     }
 
     /// Increments a value.
     fn hincr<K: ToRedisArgs, F: ToRedisArgs, D: ToRedisArgs>(key: K, field: F, delta: D) {
-        cmd(if delta.describe_numeric_behavior() == NumericBehavior::NumberIsFloat {
-            "HINCRBYFLOAT"
+        Cmd::known_command(if delta.describe_numeric_behavior() == NumericBehavior::NumberIsFloat {
+            KnownCommand::Hincrbyfloat
         } else {
-            "HINCRBY"
+            KnownCommand::Hincrby
         }).arg(key).arg(field).arg(delta)
     }
 
     /// Checks if a field in a hash exists.
     fn hexists<K: ToRedisArgs, F: ToRedisArgs>(key: K, field: F) {
-        cmd("HEXISTS").arg(key).arg(field)
+        Cmd::known_command(KnownCommand::Hexists).arg(key).arg(field)
     }
 
     /// Gets all the keys in a hash.
     fn hkeys<K: ToRedisArgs>(key: K) {
-        cmd("HKEYS").arg(key)
+        Cmd::known_command(KnownCommand::Hkeys).arg(key)
     }
 
     /// Gets all the values in a hash.
     fn hvals<K: ToRedisArgs>(key: K) {
-        cmd("HVALS").arg(key)
+        Cmd::known_command(KnownCommand::Hvals).arg(key)
     }
 
     /// Gets all the fields and values in a hash.
     fn hgetall<K: ToRedisArgs>(key: K) {
-        cmd("HGETALL").arg(key)
+        Cmd::known_command(KnownCommand::Hgetall).arg(key)
     }
 
     /// Gets the length of a hash.
     fn hlen<K: ToRedisArgs>(key: K) {
-        cmd("HLEN").arg(key)
+        Cmd::known_command(KnownCommand::Hlen).arg(key)
     }
 
     // list operations
@@ -327,253 +328,253 @@ implement_commands! {
     /// Pop an element from a list, push it to another list
     /// and return it; or block until one is available
     fn blmove<S: ToRedisArgs, D: ToRedisArgs>(srckey: S, dstkey: D, src_dir: Direction, dst_dir: Direction, timeout: f64) {
-        cmd("BLMOVE").arg(srckey).arg(dstkey).arg(src_dir).arg(dst_dir).arg(timeout)
+        Cmd::known_command(KnownCommand::Blmove).arg(srckey).arg(dstkey).arg(src_dir).arg(dst_dir).arg(timeout)
     }
 
     /// Pops `count` elements from the first non-empty list key from the list of
     /// provided key names; or blocks until one is available.
     fn blmpop<K: ToRedisArgs>(timeout: f64, numkeys: usize, key: K, dir: Direction, count: usize){
-        cmd("BLMPOP").arg(timeout).arg(numkeys).arg(key).arg(dir).arg("COUNT").arg(count)
+        Cmd::known_command(KnownCommand::Blmpop).arg(timeout).arg(numkeys).arg(key).arg(dir).arg("COUNT").arg(count)
     }
 
     /// Remove and get the first element in a list, or block until one is available.
     fn blpop<K: ToRedisArgs>(key: K, timeout: f64) {
-        cmd("BLPOP").arg(key).arg(timeout)
+        Cmd::known_command(KnownCommand::Blpop).arg(key).arg(timeout)
     }
 
     /// Remove and get the last element in a list, or block until one is available.
     fn brpop<K: ToRedisArgs>(key: K, timeout: f64) {
-        cmd("BRPOP").arg(key).arg(timeout)
+        Cmd::known_command(KnownCommand::Brpop).arg(key).arg(timeout)
     }
 
     /// Pop a value from a list, push it to another list and return it;
     /// or block until one is available.
     fn brpoplpush<S: ToRedisArgs, D: ToRedisArgs>(srckey: S, dstkey: D, timeout: f64) {
-        cmd("BRPOPLPUSH").arg(srckey).arg(dstkey).arg(timeout)
+        Cmd::known_command(KnownCommand::Brpoplpush).arg(srckey).arg(dstkey).arg(timeout)
     }
 
     /// Get an element from a list by its index.
     fn lindex<K: ToRedisArgs>(key: K, index: isize) {
-        cmd("LINDEX").arg(key).arg(index)
+        Cmd::known_command(KnownCommand::Lindex).arg(key).arg(index)
     }
 
     /// Insert an element before another element in a list.
     fn linsert_before<K: ToRedisArgs, P: ToRedisArgs, V: ToRedisArgs>(
             key: K, pivot: P, value: V) {
-        cmd("LINSERT").arg(key).arg("BEFORE").arg(pivot).arg(value)
+        Cmd::known_command(KnownCommand::Linsert).arg(key).arg("BEFORE").arg(pivot).arg(value)
     }
 
     /// Insert an element after another element in a list.
     fn linsert_after<K: ToRedisArgs, P: ToRedisArgs, V: ToRedisArgs>(
             key: K, pivot: P, value: V) {
-        cmd("LINSERT").arg(key).arg("AFTER").arg(pivot).arg(value)
+        Cmd::known_command(KnownCommand::Linsert).arg(key).arg("AFTER").arg(pivot).arg(value)
     }
 
     /// Returns the length of the list stored at key.
     fn llen<K: ToRedisArgs>(key: K) {
-        cmd("LLEN").arg(key)
+        Cmd::known_command(KnownCommand::Llen).arg(key)
     }
 
     /// Pop an element a list, push it to another list and return it
     fn lmove<S: ToRedisArgs, D: ToRedisArgs>(srckey: S, dstkey: D, src_dir: Direction, dst_dir: Direction) {
-        cmd("LMOVE").arg(srckey).arg(dstkey).arg(src_dir).arg(dst_dir)
+        Cmd::known_command(KnownCommand::Lmove).arg(srckey).arg(dstkey).arg(src_dir).arg(dst_dir)
     }
 
     /// Pops `count` elements from the first non-empty list key from the list of
     /// provided key names.
     fn lmpop<K: ToRedisArgs>( numkeys: usize, key: K, dir: Direction, count: usize) {
-        cmd("LMPOP").arg(numkeys).arg(key).arg(dir).arg("COUNT").arg(count)
+        Cmd::known_command(KnownCommand::Lmpop).arg(numkeys).arg(key).arg(dir).arg("COUNT").arg(count)
     }
 
     /// Removes and returns the up to `count` first elements of the list stored at key.
     ///
     /// If `count` is not specified, then defaults to first element.
     fn lpop<K: ToRedisArgs>(key: K, count: Option<core::num::NonZeroUsize>) {
-        cmd("LPOP").arg(key).arg(count)
+        Cmd::known_command(KnownCommand::Lpop).arg(key).arg(count)
     }
 
     /// Returns the index of the first matching value of the list stored at key.
     fn lpos<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V, options: LposOptions) {
-        cmd("LPOS").arg(key).arg(value).arg(options)
+        Cmd::known_command(KnownCommand::Lpos).arg(key).arg(value).arg(options)
     }
 
     /// Insert all the specified values at the head of the list stored at key.
     fn lpush<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("LPUSH").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Lpush).arg(key).arg(value)
     }
 
     /// Inserts a value at the head of the list stored at key, only if key
     /// already exists and holds a list.
     fn lpush_exists<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("LPUSHX").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Lpushx).arg(key).arg(value)
     }
 
     /// Returns the specified elements of the list stored at key.
     fn lrange<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("LRANGE").arg(key).arg(start).arg(stop)
+        Cmd::known_command(KnownCommand::Lrange).arg(key).arg(start).arg(stop)
     }
 
     /// Removes the first count occurrences of elements equal to value
     /// from the list stored at key.
     fn lrem<K: ToRedisArgs, V: ToRedisArgs>(key: K, count: isize, value: V) {
-        cmd("LREM").arg(key).arg(count).arg(value)
+        Cmd::known_command(KnownCommand::Lrem).arg(key).arg(count).arg(value)
     }
 
     /// Trim an existing list so that it will contain only the specified
     /// range of elements specified.
     fn ltrim<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("LTRIM").arg(key).arg(start).arg(stop)
+        Cmd::known_command(KnownCommand::Ltrim).arg(key).arg(start).arg(stop)
     }
 
     /// Sets the list element at index to value
     fn lset<K: ToRedisArgs, V: ToRedisArgs>(key: K, index: isize, value: V) {
-        cmd("LSET").arg(key).arg(index).arg(value)
+        Cmd::known_command(KnownCommand::Lset).arg(key).arg(index).arg(value)
     }
 
     /// Removes and returns the up to `count` last elements of the list stored at key
     ///
     /// If `count` is not specified, then defaults to last element.
     fn rpop<K: ToRedisArgs>(key: K, count: Option<core::num::NonZeroUsize>) {
-        cmd("RPOP").arg(key).arg(count)
+        Cmd::known_command(KnownCommand::Rpop).arg(key).arg(count)
     }
 
     /// Pop a value from a list, push it to another list and return it.
     fn rpoplpush<K: ToRedisArgs, D: ToRedisArgs>(key: K, dstkey: D) {
-        cmd("RPOPLPUSH").arg(key).arg(dstkey)
+        Cmd::known_command(KnownCommand::Rpoplpush).arg(key).arg(dstkey)
     }
 
     /// Insert all the specified values at the tail of the list stored at key.
     fn rpush<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("RPUSH").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Rpush).arg(key).arg(value)
     }
 
     /// Inserts value at the tail of the list stored at key, only if key
     /// already exists and holds a list.
     fn rpush_exists<K: ToRedisArgs, V: ToRedisArgs>(key: K, value: V) {
-        cmd("RPUSHX").arg(key).arg(value)
+        Cmd::known_command(KnownCommand::Rpushx).arg(key).arg(value)
     }
 
     // set commands
 
     /// Add one or more members to a set.
     fn sadd<K: ToRedisArgs, M: ToRedisArgs>(key: K, member: M) {
-        cmd("SADD").arg(key).arg(member)
+        Cmd::known_command(KnownCommand::Sadd).arg(key).arg(member)
     }
 
     /// Get the number of members in a set.
     fn scard<K: ToRedisArgs>(key: K) {
-        cmd("SCARD").arg(key)
+        Cmd::known_command(KnownCommand::Scard).arg(key)
     }
 
     /// Subtract multiple sets.
     fn sdiff<K: ToRedisArgs>(keys: K) {
-        cmd("SDIFF").arg(keys)
+        Cmd::known_command(KnownCommand::Sdiff).arg(keys)
     }
 
     /// Subtract multiple sets and store the resulting set in a key.
     fn sdiffstore<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: K) {
-        cmd("SDIFFSTORE").arg(dstkey).arg(keys)
+        Cmd::known_command(KnownCommand::Sdiffstore).arg(dstkey).arg(keys)
     }
 
     /// Intersect multiple sets.
     fn sinter<K: ToRedisArgs>(keys: K) {
-        cmd("SINTER").arg(keys)
+        Cmd::known_command(KnownCommand::Sinter).arg(keys)
     }
 
     /// Intersect multiple sets and store the resulting set in a key.
     fn sinterstore<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: K) {
-        cmd("SINTERSTORE").arg(dstkey).arg(keys)
+        Cmd::known_command(KnownCommand::Sinterstore).arg(dstkey).arg(keys)
     }
 
     /// Determine if a given value is a member of a set.
     fn sismember<K: ToRedisArgs, M: ToRedisArgs>(key: K, member: M) {
-        cmd("SISMEMBER").arg(key).arg(member)
+        Cmd::known_command(KnownCommand::Sismember).arg(key).arg(member)
     }
 
     /// Get all the members in a set.
     fn smembers<K: ToRedisArgs>(key: K) {
-        cmd("SMEMBERS").arg(key)
+        Cmd::known_command(KnownCommand::Smembers).arg(key)
     }
 
     /// Move a member from one set to another.
     fn smove<S: ToRedisArgs, D: ToRedisArgs, M: ToRedisArgs>(srckey: S, dstkey: D, member: M) {
-        cmd("SMOVE").arg(srckey).arg(dstkey).arg(member)
+        Cmd::known_command(KnownCommand::Smove).arg(srckey).arg(dstkey).arg(member)
     }
 
     /// Remove and return a random member from a set.
     fn spop<K: ToRedisArgs>(key: K) {
-        cmd("SPOP").arg(key)
+        Cmd::known_command(KnownCommand::Spop).arg(key)
     }
 
     /// Get one random member from a set.
     fn srandmember<K: ToRedisArgs>(key: K) {
-        cmd("SRANDMEMBER").arg(key)
+        Cmd::known_command(KnownCommand::Srandmember).arg(key)
     }
 
     /// Get multiple random members from a set.
     fn srandmember_multiple<K: ToRedisArgs>(key: K, count: usize) {
-        cmd("SRANDMEMBER").arg(key).arg(count)
+        Cmd::known_command(KnownCommand::Srandmember).arg(key).arg(count)
     }
 
     /// Remove one or more members from a set.
     fn srem<K: ToRedisArgs, M: ToRedisArgs>(key: K, member: M) {
-        cmd("SREM").arg(key).arg(member)
+        Cmd::known_command(KnownCommand::Srem).arg(key).arg(member)
     }
 
     /// Add multiple sets.
     fn sunion<K: ToRedisArgs>(keys: K) {
-        cmd("SUNION").arg(keys)
+        Cmd::known_command(KnownCommand::Sunion).arg(keys)
     }
 
     /// Add multiple sets and store the resulting set in a key.
     fn sunionstore<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: K) {
-        cmd("SUNIONSTORE").arg(dstkey).arg(keys)
+        Cmd::known_command(KnownCommand::Sunionstore).arg(dstkey).arg(keys)
     }
 
     // sorted set commands
 
     /// Add one member to a sorted set, or update its score if it already exists.
     fn zadd<K: ToRedisArgs, S: ToRedisArgs, M: ToRedisArgs>(key: K, member: M, score: S) {
-        cmd("ZADD").arg(key).arg(score).arg(member)
+        Cmd::known_command(KnownCommand::Zadd).arg(key).arg(score).arg(member)
     }
 
     /// Add multiple members to a sorted set, or update its score if it already exists.
     fn zadd_multiple<K: ToRedisArgs, S: ToRedisArgs, M: ToRedisArgs>(key: K, items: &'a [(S, M)]) {
-        cmd("ZADD").arg(key).arg(items)
+        Cmd::known_command(KnownCommand::Zadd).arg(key).arg(items)
     }
 
     /// Get the number of members in a sorted set.
     fn zcard<K: ToRedisArgs>(key: K) {
-        cmd("ZCARD").arg(key)
+        Cmd::known_command(KnownCommand::Zcard).arg(key)
     }
 
     /// Count the members in a sorted set with scores within the given values.
     fn zcount<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZCOUNT").arg(key).arg(min).arg(max)
+        Cmd::known_command(KnownCommand::Zcount).arg(key).arg(min).arg(max)
     }
 
     /// Increments the member in a sorted set at key by delta.
     /// If the member does not exist, it is added with delta as its score.
     fn zincr<K: ToRedisArgs, M: ToRedisArgs, D: ToRedisArgs>(key: K, member: M, delta: D) {
-        cmd("ZINCRBY").arg(key).arg(delta).arg(member)
+        Cmd::known_command(KnownCommand::Zincrby).arg(key).arg(delta).arg(member)
     }
 
     /// Intersect multiple sorted sets and store the resulting sorted set in
     /// a new key using SUM as aggregation function.
     fn zinterstore<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: &'a [K]) {
-        cmd("ZINTERSTORE").arg(dstkey).arg(keys.len()).arg(keys)
+        Cmd::known_command(KnownCommand::Zinterstore).arg(dstkey).arg(keys.len()).arg(keys)
     }
 
     /// Intersect multiple sorted sets and store the resulting sorted set in
     /// a new key using MIN as aggregation function.
     fn zinterstore_min<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: &'a [K]) {
-        cmd("ZINTERSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN")
+        Cmd::known_command(KnownCommand::Zinterstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN")
     }
 
     /// Intersect multiple sorted sets and store the resulting sorted set in
     /// a new key using MAX as aggregation function.
     fn zinterstore_max<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: &'a [K]) {
-        cmd("ZINTERSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX")
+        Cmd::known_command(KnownCommand::Zinterstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX")
     }
 
     /// [`Commands::zinterstore`], but with the ability to specify a
@@ -581,236 +582,236 @@ implement_commands! {
     /// in a tuple.
     fn zinterstore_weights<D: ToRedisArgs, K: ToRedisArgs, W: ToRedisArgs>(dstkey: D, keys: &'a [(K, W)]) {
         let (keys, weights): (Vec<&K>, Vec<&W>) = keys.iter().map(|(key, weight)| (key, weight)).unzip();
-        cmd("ZINTERSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("WEIGHTS").arg(weights)
+        Cmd::known_command(KnownCommand::Zinterstore).arg(dstkey).arg(keys.len()).arg(keys).arg("WEIGHTS").arg(weights)
     }
 
-    /// [`Commands::zinterstore_min`], but with the ability to specify a
+    /// [`Commands::zinterstoremin`], but with the ability to specify a
     /// multiplication factor for each sorted set by pairing one with each key
     /// in a tuple.
     fn zinterstore_min_weights<D: ToRedisArgs, K: ToRedisArgs, W: ToRedisArgs>(dstkey: D, keys: &'a [(K, W)]) {
         let (keys, weights): (Vec<&K>, Vec<&W>) = keys.iter().map(|(key, weight)| (key, weight)).unzip();
-        cmd("ZINTERSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN").arg("WEIGHTS").arg(weights)
+        Cmd::known_command(KnownCommand::Zinterstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN").arg("WEIGHTS").arg(weights)
     }
 
-    /// [`Commands::zinterstore_max`], but with the ability to specify a
+    /// [`Commands::zinterstoremax`], but with the ability to specify a
     /// multiplication factor for each sorted set by pairing one with each key
     /// in a tuple.
     fn zinterstore_max_weights<D: ToRedisArgs, K: ToRedisArgs, W: ToRedisArgs>(dstkey: D, keys: &'a [(K, W)]) {
         let (keys, weights): (Vec<&K>, Vec<&W>) = keys.iter().map(|(key, weight)| (key, weight)).unzip();
-        cmd("ZINTERSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX").arg("WEIGHTS").arg(weights)
+        Cmd::known_command(KnownCommand::Zinterstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX").arg("WEIGHTS").arg(weights)
     }
 
     /// Count the number of members in a sorted set between a given lexicographical range.
     fn zlexcount<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZLEXCOUNT").arg(key).arg(min).arg(max)
+        Cmd::known_command(KnownCommand::Zlexcount).arg(key).arg(min).arg(max)
     }
 
     /// Removes and returns the member with the highest score in a sorted set.
     /// Blocks until a member is available otherwise.
     fn bzpopmax<K: ToRedisArgs>(key: K, timeout: f64) {
-        cmd("BZPOPMAX").arg(key).arg(timeout)
+        Cmd::known_command(KnownCommand::Bzpopmax).arg(key).arg(timeout)
     }
 
     /// Removes and returns up to count members with the highest scores in a sorted set
     fn zpopmax<K: ToRedisArgs>(key: K, count: isize) {
-        cmd("ZPOPMAX").arg(key).arg(count)
+        Cmd::known_command(KnownCommand::Zpopmax).arg(key).arg(count)
     }
 
     /// Removes and returns the member with the lowest score in a sorted set.
     /// Blocks until a member is available otherwise.
     fn bzpopmin<K: ToRedisArgs>(key: K, timeout: f64) {
-        cmd("BZPOPMIN").arg(key).arg(timeout)
+        Cmd::known_command(KnownCommand::Bzpopmin).arg(key).arg(timeout)
     }
 
     /// Removes and returns up to count members with the lowest scores in a sorted set
     fn zpopmin<K: ToRedisArgs>(key: K, count: isize) {
-        cmd("ZPOPMIN").arg(key).arg(count)
+        Cmd::known_command(KnownCommand::Zpopmin).arg(key).arg(count)
     }
 
     /// Removes and returns up to count members with the highest scores,
     /// from the first non-empty sorted set in the provided list of key names.
     /// Blocks until a member is available otherwise.
     fn bzmpop_max<K: ToRedisArgs>(timeout: f64, keys: &'a [K], count: isize) {
-        cmd("BZMPOP").arg(timeout).arg(keys.len()).arg(keys).arg("MAX").arg("COUNT").arg(count)
+        Cmd::known_command(KnownCommand::Bzmpop).arg(timeout).arg(keys.len()).arg(keys).arg("MAX").arg("COUNT").arg(count)
     }
 
     /// Removes and returns up to count members with the highest scores,
     /// from the first non-empty sorted set in the provided list of key names.
     fn zmpop_max<K: ToRedisArgs>(keys: &'a [K], count: isize) {
-        cmd("ZMPOP").arg(keys.len()).arg(keys).arg("MAX").arg("COUNT").arg(count)
+        Cmd::known_command(KnownCommand::Zmpop).arg(keys.len()).arg(keys).arg("MAX").arg("COUNT").arg(count)
     }
 
     /// Removes and returns up to count members with the lowest scores,
     /// from the first non-empty sorted set in the provided list of key names.
     /// Blocks until a member is available otherwise.
     fn bzmpop_min<K: ToRedisArgs>(timeout: f64, keys: &'a [K], count: isize) {
-        cmd("BZMPOP").arg(timeout).arg(keys.len()).arg(keys).arg("MIN").arg("COUNT").arg(count)
+        Cmd::known_command(KnownCommand::Bzmpop).arg(timeout).arg(keys.len()).arg(keys).arg("MIN").arg("COUNT").arg(count)
     }
 
     /// Removes and returns up to count members with the lowest scores,
     /// from the first non-empty sorted set in the provided list of key names.
     fn zmpop_min<K: ToRedisArgs>(keys: &'a [K], count: isize) {
-        cmd("ZMPOP").arg(keys.len()).arg(keys).arg("MIN").arg("COUNT").arg(count)
+        Cmd::known_command(KnownCommand::Zmpop).arg(keys.len()).arg(keys).arg("MIN").arg("COUNT").arg(count)
     }
 
     /// Return up to count random members in a sorted set (or 1 if `count == None`)
     fn zrandmember<K: ToRedisArgs>(key: K, count: Option<isize>) {
-        cmd("ZRANDMEMBER").arg(key).arg(count)
+        Cmd::known_command(KnownCommand::Zrandmember).arg(key).arg(count)
     }
 
     /// Return up to count random members in a sorted set with scores
     fn zrandmember_withscores<K: ToRedisArgs>(key: K, count: isize) {
-        cmd("ZRANDMEMBER").arg(key).arg(count).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrandmember).arg(key).arg(count).arg("WITHSCORES")
     }
 
     /// Return a range of members in a sorted set, by index
     fn zrange<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("ZRANGE").arg(key).arg(start).arg(stop)
+        Cmd::known_command(KnownCommand::Zrange).arg(key).arg(start).arg(stop)
     }
 
     /// Return a range of members in a sorted set, by index with scores.
     fn zrange_withscores<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("ZRANGE").arg(key).arg(start).arg(stop).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrange).arg(key).arg(start).arg(stop).arg("WITHSCORES")
     }
 
     /// Return a range of members in a sorted set, by lexicographical range.
     fn zrangebylex<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZRANGEBYLEX").arg(key).arg(min).arg(max)
+        Cmd::known_command(KnownCommand::Zrangebylex).arg(key).arg(min).arg(max)
     }
 
     /// Return a range of members in a sorted set, by lexicographical
     /// range with offset and limit.
     fn zrangebylex_limit<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(
             key: K, min: M, max: MM, offset: isize, count: isize) {
-        cmd("ZRANGEBYLEX").arg(key).arg(min).arg(max).arg("LIMIT").arg(offset).arg(count)
+        Cmd::known_command(KnownCommand::Zrangebylex).arg(key).arg(min).arg(max).arg("LIMIT").arg(offset).arg(count)
     }
 
     /// Return a range of members in a sorted set, by lexicographical range.
     fn zrevrangebylex<K: ToRedisArgs, MM: ToRedisArgs, M: ToRedisArgs>(key: K, max: MM, min: M) {
-        cmd("ZREVRANGEBYLEX").arg(key).arg(max).arg(min)
+        Cmd::known_command(KnownCommand::Zrevrangebylex).arg(key).arg(max).arg(min)
     }
 
     /// Return a range of members in a sorted set, by lexicographical
     /// range with offset and limit.
     fn zrevrangebylex_limit<K: ToRedisArgs, MM: ToRedisArgs, M: ToRedisArgs>(
             key: K, max: MM, min: M, offset: isize, count: isize) {
-        cmd("ZREVRANGEBYLEX").arg(key).arg(max).arg(min).arg("LIMIT").arg(offset).arg(count)
+        Cmd::known_command(KnownCommand::Zrevrangebylex).arg(key).arg(max).arg(min).arg("LIMIT").arg(offset).arg(count)
     }
 
     /// Return a range of members in a sorted set, by score.
     fn zrangebyscore<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZRANGEBYSCORE").arg(key).arg(min).arg(max)
+        Cmd::known_command(KnownCommand::Zrangebyscore).arg(key).arg(min).arg(max)
     }
 
     /// Return a range of members in a sorted set, by score with scores.
     fn zrangebyscore_withscores<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZRANGEBYSCORE").arg(key).arg(min).arg(max).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrangebyscore).arg(key).arg(min).arg(max).arg("WITHSCORES")
     }
 
     /// Return a range of members in a sorted set, by score with limit.
     fn zrangebyscore_limit<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>
             (key: K, min: M, max: MM, offset: isize, count: isize) {
-        cmd("ZRANGEBYSCORE").arg(key).arg(min).arg(max).arg("LIMIT").arg(offset).arg(count)
+        Cmd::known_command(KnownCommand::Zrangebyscore).arg(key).arg(min).arg(max).arg("LIMIT").arg(offset).arg(count)
     }
 
     /// Return a range of members in a sorted set, by score with limit with scores.
     fn zrangebyscore_limit_withscores<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>
             (key: K, min: M, max: MM, offset: isize, count: isize) {
-        cmd("ZRANGEBYSCORE").arg(key).arg(min).arg(max).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrangebyscore).arg(key).arg(min).arg(max).arg("WITHSCORES")
             .arg("LIMIT").arg(offset).arg(count)
     }
 
     /// Determine the index of a member in a sorted set.
     fn zrank<K: ToRedisArgs, M: ToRedisArgs>(key: K, member: M) {
-        cmd("ZRANK").arg(key).arg(member)
+        Cmd::known_command(KnownCommand::Zrank).arg(key).arg(member)
     }
 
     /// Remove one or more members from a sorted set.
     fn zrem<K: ToRedisArgs, M: ToRedisArgs>(key: K, members: M) {
-        cmd("ZREM").arg(key).arg(members)
+        Cmd::known_command(KnownCommand::Zrem).arg(key).arg(members)
     }
 
     /// Remove all members in a sorted set between the given lexicographical range.
     fn zrembylex<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZREMRANGEBYLEX").arg(key).arg(min).arg(max)
+        Cmd::known_command(KnownCommand::Zremrangebylex).arg(key).arg(min).arg(max)
     }
 
     /// Remove all members in a sorted set within the given indexes.
     fn zremrangebyrank<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("ZREMRANGEBYRANK").arg(key).arg(start).arg(stop)
+        Cmd::known_command(KnownCommand::Zremrangebyrank).arg(key).arg(start).arg(stop)
     }
 
     /// Remove all members in a sorted set within the given scores.
     fn zrembyscore<K: ToRedisArgs, M: ToRedisArgs, MM: ToRedisArgs>(key: K, min: M, max: MM) {
-        cmd("ZREMRANGEBYSCORE").arg(key).arg(min).arg(max)
+        Cmd::known_command(KnownCommand::Zremrangebyscore).arg(key).arg(min).arg(max)
     }
 
     /// Return a range of members in a sorted set, by index, with scores
     /// ordered from high to low.
     fn zrevrange<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("ZREVRANGE").arg(key).arg(start).arg(stop)
+        Cmd::known_command(KnownCommand::Zrevrange).arg(key).arg(start).arg(stop)
     }
 
     /// Return a range of members in a sorted set, by index, with scores
     /// ordered from high to low.
     fn zrevrange_withscores<K: ToRedisArgs>(key: K, start: isize, stop: isize) {
-        cmd("ZREVRANGE").arg(key).arg(start).arg(stop).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrevrange).arg(key).arg(start).arg(stop).arg("WITHSCORES")
     }
 
     /// Return a range of members in a sorted set, by score.
     fn zrevrangebyscore<K: ToRedisArgs, MM: ToRedisArgs, M: ToRedisArgs>(key: K, max: MM, min: M) {
-        cmd("ZREVRANGEBYSCORE").arg(key).arg(max).arg(min)
+        Cmd::known_command(KnownCommand::Zrevrangebyscore).arg(key).arg(max).arg(min)
     }
 
     /// Return a range of members in a sorted set, by score with scores.
     fn zrevrangebyscore_withscores<K: ToRedisArgs, MM: ToRedisArgs, M: ToRedisArgs>(key: K, max: MM, min: M) {
-        cmd("ZREVRANGEBYSCORE").arg(key).arg(max).arg(min).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrevrangebyscore).arg(key).arg(max).arg(min).arg("WITHSCORES")
     }
 
     /// Return a range of members in a sorted set, by score with limit.
     fn zrevrangebyscore_limit<K: ToRedisArgs, MM: ToRedisArgs, M: ToRedisArgs>
             (key: K, max: MM, min: M, offset: isize, count: isize) {
-        cmd("ZREVRANGEBYSCORE").arg(key).arg(max).arg(min).arg("LIMIT").arg(offset).arg(count)
+        Cmd::known_command(KnownCommand::Zrevrangebyscore).arg(key).arg(max).arg(min).arg("LIMIT").arg(offset).arg(count)
     }
 
     /// Return a range of members in a sorted set, by score with limit with scores.
     fn zrevrangebyscore_limit_withscores<K: ToRedisArgs, MM: ToRedisArgs, M: ToRedisArgs>
             (key: K, max: MM, min: M, offset: isize, count: isize) {
-        cmd("ZREVRANGEBYSCORE").arg(key).arg(max).arg(min).arg("WITHSCORES")
+        Cmd::known_command(KnownCommand::Zrevrangebyscore).arg(key).arg(max).arg(min).arg("WITHSCORES")
             .arg("LIMIT").arg(offset).arg(count)
     }
 
     /// Determine the index of a member in a sorted set, with scores ordered from high to low.
     fn zrevrank<K: ToRedisArgs, M: ToRedisArgs>(key: K, member: M) {
-        cmd("ZREVRANK").arg(key).arg(member)
+        Cmd::known_command(KnownCommand::Zrevrank).arg(key).arg(member)
     }
 
     /// Get the score associated with the given member in a sorted set.
     fn zscore<K: ToRedisArgs, M: ToRedisArgs>(key: K, member: M) {
-        cmd("ZSCORE").arg(key).arg(member)
+        Cmd::known_command(KnownCommand::Zscore).arg(key).arg(member)
     }
 
     /// Get the scores associated with multiple members in a sorted set.
     fn zscore_multiple<K: ToRedisArgs, M: ToRedisArgs>(key: K, members: &'a [M]) {
-        cmd("ZMSCORE").arg(key).arg(members)
+        Cmd::known_command(KnownCommand::Zmscore).arg(key).arg(members)
     }
 
     /// Unions multiple sorted sets and store the resulting sorted set in
     /// a new key using SUM as aggregation function.
     fn zunionstore<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: &'a [K]) {
-        cmd("ZUNIONSTORE").arg(dstkey).arg(keys.len()).arg(keys)
+        Cmd::known_command(KnownCommand::Zunionstore).arg(dstkey).arg(keys.len()).arg(keys)
     }
 
     /// Unions multiple sorted sets and store the resulting sorted set in
     /// a new key using MIN as aggregation function.
     fn zunionstore_min<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: &'a [K]) {
-        cmd("ZUNIONSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN")
+        Cmd::known_command(KnownCommand::Zunionstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN")
     }
 
     /// Unions multiple sorted sets and store the resulting sorted set in
     /// a new key using MAX as aggregation function.
     fn zunionstore_max<D: ToRedisArgs, K: ToRedisArgs>(dstkey: D, keys: &'a [K]) {
-        cmd("ZUNIONSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX")
+        Cmd::known_command(KnownCommand::Zunionstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX")
     }
 
     /// [`Commands::zunionstore`], but with the ability to specify a
@@ -818,68 +819,68 @@ implement_commands! {
     /// in a tuple.
     fn zunionstore_weights<D: ToRedisArgs, K: ToRedisArgs, W: ToRedisArgs>(dstkey: D, keys: &'a [(K, W)]) {
         let (keys, weights): (Vec<&K>, Vec<&W>) = keys.iter().map(|(key, weight)| (key, weight)).unzip();
-        cmd("ZUNIONSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("WEIGHTS").arg(weights)
+        Cmd::known_command(KnownCommand::Zunionstore).arg(dstkey).arg(keys.len()).arg(keys).arg("WEIGHTS").arg(weights)
     }
 
-    /// [`Commands::zunionstore_min`], but with the ability to specify a
+    /// [`Commands::zunionstoremin`], but with the ability to specify a
     /// multiplication factor for each sorted set by pairing one with each key
     /// in a tuple.
     fn zunionstore_min_weights<D: ToRedisArgs, K: ToRedisArgs, W: ToRedisArgs>(dstkey: D, keys: &'a [(K, W)]) {
         let (keys, weights): (Vec<&K>, Vec<&W>) = keys.iter().map(|(key, weight)| (key, weight)).unzip();
-        cmd("ZUNIONSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN").arg("WEIGHTS").arg(weights)
+        Cmd::known_command(KnownCommand::Zunionstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MIN").arg("WEIGHTS").arg(weights)
     }
 
-    /// [`Commands::zunionstore_max`], but with the ability to specify a
+    /// [`Commands::zunionstoremax`], but with the ability to specify a
     /// multiplication factor for each sorted set by pairing one with each key
     /// in a tuple.
     fn zunionstore_max_weights<D: ToRedisArgs, K: ToRedisArgs, W: ToRedisArgs>(dstkey: D, keys: &'a [(K, W)]) {
         let (keys, weights): (Vec<&K>, Vec<&W>) = keys.iter().map(|(key, weight)| (key, weight)).unzip();
-        cmd("ZUNIONSTORE").arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX").arg("WEIGHTS").arg(weights)
+        Cmd::known_command(KnownCommand::Zunionstore).arg(dstkey).arg(keys.len()).arg(keys).arg("AGGREGATE").arg("MAX").arg("WEIGHTS").arg(weights)
     }
 
     // hyperloglog commands
 
     /// Adds the specified elements to the specified HyperLogLog.
     fn pfadd<K: ToRedisArgs, E: ToRedisArgs>(key: K, element: E) {
-        cmd("PFADD").arg(key).arg(element)
+        Cmd::known_command(KnownCommand::Pfadd).arg(key).arg(element)
     }
 
     /// Return the approximated cardinality of the set(s) observed by the
     /// HyperLogLog at key(s).
     fn pfcount<K: ToRedisArgs>(key: K) {
-        cmd("PFCOUNT").arg(key)
+        Cmd::known_command(KnownCommand::Pfcount).arg(key)
     }
 
     /// Merge N different HyperLogLogs into a single one.
     fn pfmerge<D: ToRedisArgs, S: ToRedisArgs>(dstkey: D, srckeys: S) {
-        cmd("PFMERGE").arg(dstkey).arg(srckeys)
+        Cmd::known_command(KnownCommand::Pfmerge).arg(dstkey).arg(srckeys)
     }
 
     /// Posts a message to the given channel.
     fn publish<K: ToRedisArgs, E: ToRedisArgs>(channel: K, message: E) {
-        cmd("PUBLISH").arg(channel).arg(message)
+        Cmd::known_command(KnownCommand::Publish).arg(channel).arg(message)
     }
 
     // Object commands
 
     /// Returns the encoding of a key.
     fn object_encoding<K: ToRedisArgs>(key: K) {
-        cmd("OBJECT").arg("ENCODING").arg(key)
+        Cmd::known_command(KnownCommand::ObjectEncoding).arg(key)
     }
 
     /// Returns the time in seconds since the last access of a key.
     fn object_idletime<K: ToRedisArgs>(key: K) {
-        cmd("OBJECT").arg("IDLETIME").arg(key)
+        Cmd::known_command(KnownCommand::ObjectIdletime).arg(key)
     }
 
     /// Returns the logarithmic access frequency counter of a key.
     fn object_freq<K: ToRedisArgs>(key: K) {
-        cmd("OBJECT").arg("FREQ").arg(key)
+        Cmd::known_command(KnownCommand::ObjectFreq).arg(key)
     }
 
     /// Returns the reference count of a key.
     fn object_refcount<K: ToRedisArgs>(key: K) {
-        cmd("OBJECT").arg("REFCOUNT").arg(key)
+        Cmd::known_command(KnownCommand::ObjectRefcount).arg(key)
     }
 
     // ACL commands
@@ -890,7 +891,7 @@ implement_commands! {
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_load<>() {
-        cmd("ACL").arg("LOAD")
+        &mut Cmd::known_command(KnownCommand::AclLoad)
     }
 
     /// When Redis is configured to use an ACL file (with the aclfile
@@ -899,14 +900,14 @@ implement_commands! {
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_save<>() {
-        cmd("ACL").arg("SAVE")
+        &mut Cmd::known_command(KnownCommand::AclSave)
     }
 
     /// Shows the currently active ACL rules in the Redis server.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_list<>() {
-        cmd("ACL").arg("LIST")
+        &mut Cmd::known_command(KnownCommand::AclList)
     }
 
     /// Shows a list of all the usernames of the currently configured users in
@@ -914,21 +915,21 @@ implement_commands! {
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_users<>() {
-        cmd("ACL").arg("USERS")
+        &mut Cmd::known_command(KnownCommand::AclUsers)
     }
 
     /// Returns all the rules defined for an existing ACL user.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_getuser<K: ToRedisArgs>(username: K) {
-        cmd("ACL").arg("GETUSER").arg(username)
+        Cmd::known_command(KnownCommand::AclGetuser).arg(username)
     }
 
     /// Creates an ACL user without any privilege.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_setuser<K: ToRedisArgs>(username: K) {
-        cmd("ACL").arg("SETUSER").arg(username)
+        Cmd::known_command(KnownCommand::AclSetuser).arg(username)
     }
 
     /// Creates an ACL user with the specified rules or modify the rules of
@@ -936,7 +937,7 @@ implement_commands! {
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_setuser_rules<K: ToRedisArgs>(username: K, rules: &'a [acl::Rule]) {
-        cmd("ACL").arg("SETUSER").arg(username).arg(rules)
+        Cmd::known_command(KnownCommand::AclSetuser).arg(username).arg(rules)
     }
 
     /// Delete all the specified ACL users and terminate all the connections
@@ -944,49 +945,49 @@ implement_commands! {
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_deluser<K: ToRedisArgs>(usernames: &'a [K]) {
-        cmd("ACL").arg("DELUSER").arg(usernames)
+        Cmd::known_command(KnownCommand::AclDeluser).arg(usernames)
     }
 
     /// Shows the available ACL categories.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_cat<>() {
-        cmd("ACL").arg("CAT")
+        &mut Cmd::known_command(KnownCommand::AclCat)
     }
 
     /// Shows all the Redis commands in the specified category.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_cat_categoryname<K: ToRedisArgs>(categoryname: K) {
-        cmd("ACL").arg("CAT").arg(categoryname)
+        Cmd::known_command(KnownCommand::AclCat).arg(categoryname)
     }
 
     /// Generates a 256-bits password starting from /dev/urandom if available.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_genpass<>() {
-        cmd("ACL").arg("GENPASS")
+        &mut Cmd::known_command(KnownCommand::AclGenpass)
     }
 
     /// Generates a 1-to-1024-bits password starting from /dev/urandom if available.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_genpass_bits<>(bits: isize) {
-        cmd("ACL").arg("GENPASS").arg(bits)
+        Cmd::known_command(KnownCommand::AclGenpass).arg(bits)
     }
 
     /// Returns the username the current connection is authenticated with.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_whoami<>() {
-        cmd("ACL").arg("WHOAMI")
+        &mut Cmd::known_command(KnownCommand::AclWhoami)
     }
 
     /// Shows a list of recent ACL security events
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_log<>(count: isize) {
-        cmd("ACL").arg("LOG").arg(count)
+        Cmd::known_command(KnownCommand::AclLog).arg(count)
 
     }
 
@@ -994,14 +995,14 @@ implement_commands! {
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_log_reset<>() {
-        cmd("ACL").arg("LOG").arg("RESET")
+        Cmd::known_command(KnownCommand::AclLog).arg("RESET")
     }
 
     /// Returns a helpful text describing the different subcommands.
     #[cfg(feature = "acl")]
     #[cfg_attr(docsrs, doc(cfg(feature = "acl")))]
     fn acl_help<>() {
-        cmd("ACL").arg("HELP")
+        &mut Cmd::known_command(KnownCommand::AclHelp)
     }
 
     //
@@ -1027,7 +1028,7 @@ implement_commands! {
     /// use redis::geo::Coord;
     ///
     /// fn add_point(con: &mut Connection) -> RedisResult<isize> {
-    ///     con.geo_add("my_gis", (Coord::lon_lat(13.361389, 38.115556), "Palermo"))
+    ///     con.geo_add("my_gis", (Coord::lonlat(13.361389, 38.115556), "Palermo"))
     /// }
     ///
     /// fn add_point_with_tuples(con: &mut Connection) -> RedisResult<isize> {
@@ -1044,7 +1045,7 @@ implement_commands! {
     #[cfg(feature = "geospatial")]
     #[cfg_attr(docsrs, doc(cfg(feature = "geospatial")))]
     fn geo_add<K: ToRedisArgs, M: ToRedisArgs>(key: K, members: M) {
-        cmd("GEOADD").arg(key).arg(members)
+        Cmd::known_command(KnownCommand::Geoadd).arg(key).arg(members)
     }
 
     /// Return the distance between two members in the geospatial index
@@ -1086,7 +1087,7 @@ implement_commands! {
         member2: M2,
         unit: geo::Unit
     ) {
-        cmd("GEODIST")
+        Cmd::known_command(KnownCommand::Geodist)
             .arg(key)
             .arg(member1)
             .arg(member2)
@@ -1115,7 +1116,7 @@ implement_commands! {
     #[cfg(feature = "geospatial")]
     #[cfg_attr(docsrs, doc(cfg(feature = "geospatial")))]
     fn geo_hash<K: ToRedisArgs, M: ToRedisArgs>(key: K, members: M) {
-        cmd("GEOHASH").arg(key).arg(members)
+        Cmd::known_command(KnownCommand::Geohash).arg(key).arg(members)
     }
 
     /// Return the positions of all the specified members of the geospatial
@@ -1144,7 +1145,7 @@ implement_commands! {
     #[cfg(feature = "geospatial")]
     #[cfg_attr(docsrs, doc(cfg(feature = "geospatial")))]
     fn geo_pos<K: ToRedisArgs, M: ToRedisArgs>(key: K, members: M) {
-        cmd("GEOPOS").arg(key).arg(members)
+        Cmd::known_command(KnownCommand::Geopos).arg(key).arg(members)
     }
 
     /// Return the members of a sorted set populated with geospatial information
@@ -1176,7 +1177,7 @@ implement_commands! {
         unit: geo::Unit,
         options: geo::RadiusOptions
     ) {
-        cmd("GEORADIUS")
+        Cmd::known_command(KnownCommand::Georadius)
             .arg(key)
             .arg(longitude)
             .arg(latitude)
@@ -1196,7 +1197,7 @@ implement_commands! {
         unit: geo::Unit,
         options: geo::RadiusOptions
     ) {
-        cmd("GEORADIUSBYMEMBER")
+        Cmd::known_command(KnownCommand::Georadiusbymember)
             .arg(key)
             .arg(member)
             .arg(radius)
@@ -1219,7 +1220,7 @@ implement_commands! {
         key: K,
         group: G,
         ids: &'a [I]) {
-        cmd("XACK")
+        Cmd::known_command(KnownCommand::Xack)
             .arg(key)
             .arg(group)
             .arg(ids)
@@ -1238,7 +1239,7 @@ implement_commands! {
         id: ID,
         items: &'a [(F, V)]
     ) {
-        cmd("XADD").arg(key).arg(id).arg(items)
+        Cmd::known_command(KnownCommand::Xadd).arg(key).arg(id).arg(items)
     }
 
 
@@ -1255,7 +1256,7 @@ implement_commands! {
         id: ID,
         map: BTM
     ) {
-        cmd("XADD").arg(key).arg(id).arg(map)
+        Cmd::known_command(KnownCommand::Xadd).arg(key).arg(id).arg(map)
     }
 
     /// Add a stream message while capping the stream at a maxlength.
@@ -1276,7 +1277,7 @@ implement_commands! {
         id: ID,
         items: &'a [(F, V)]
     ) {
-        cmd("XADD")
+        Cmd::known_command(KnownCommand::Xadd)
             .arg(key)
             .arg(maxlen)
             .arg(id)
@@ -1297,7 +1298,7 @@ implement_commands! {
         id: ID,
         map: BTM
     ) {
-        cmd("XADD")
+        Cmd::known_command(KnownCommand::Xadd)
             .arg(key)
             .arg(maxlen)
             .arg(id)
@@ -1324,7 +1325,7 @@ implement_commands! {
         min_idle_time: MIT,
         ids: &'a [ID]
     ) {
-        cmd("XCLAIM")
+        Cmd::known_command(KnownCommand::Xclaim)
             .arg(key)
             .arg(group)
             .arg(consumer)
@@ -1381,7 +1382,7 @@ implement_commands! {
         ids: &'a [ID],
         options: streams::StreamClaimOptions
     ) {
-        cmd("XCLAIM")
+        Cmd::known_command(KnownCommand::Xclaim)
             .arg(key)
             .arg(group)
             .arg(consumer)
@@ -1402,7 +1403,7 @@ implement_commands! {
         key: K,
         ids: &'a [ID]
     ) {
-        cmd("XDEL").arg(key).arg(ids)
+        Cmd::known_command(KnownCommand::Xdel).arg(key).arg(ids)
     }
 
 
@@ -1421,7 +1422,7 @@ implement_commands! {
         group: G,
         id: ID
     ) {
-        cmd("XGROUP")
+        Cmd::known_command(KnownCommand::Xgroup)
             .arg("CREATE")
             .arg(key)
             .arg(group)
@@ -1446,7 +1447,7 @@ implement_commands! {
         group: G,
         id: ID
     ) {
-        cmd("XGROUP")
+        Cmd::known_command(KnownCommand::Xgroup)
             .arg("CREATE")
             .arg(key)
             .arg(group)
@@ -1468,7 +1469,7 @@ implement_commands! {
         group: G,
         id: ID
     ) {
-        cmd("XGROUP")
+        Cmd::known_command(KnownCommand::Xgroup)
             .arg("SETID")
             .arg(key)
             .arg(group)
@@ -1487,7 +1488,7 @@ implement_commands! {
         key: K,
         group: G
     ) {
-        cmd("XGROUP").arg("DESTROY").arg(key).arg(group)
+        Cmd::known_command(KnownCommand::XgroupDestroy).arg(key).arg(group)
     }
 
     /// This deletes a `consumer` from an existing consumer `group`
@@ -1503,7 +1504,7 @@ implement_commands! {
         group: G,
         consumer: C
     ) {
-        cmd("XGROUP")
+        Cmd::known_command(KnownCommand::Xgroup)
             .arg("DELCONSUMER")
             .arg(key)
             .arg(group)
@@ -1527,7 +1528,7 @@ implement_commands! {
         key: K,
         group: G
     ) {
-        cmd("XINFO")
+        Cmd::known_command(KnownCommand::Xinfo)
             .arg("CONSUMERS")
             .arg(key)
             .arg(group)
@@ -1546,7 +1547,7 @@ implement_commands! {
     #[cfg(feature = "streams")]
     #[cfg_attr(docsrs, doc(cfg(feature = "streams")))]
     fn xinfo_groups<K: ToRedisArgs>(key: K) {
-        cmd("XINFO").arg("GROUPS").arg(key)
+        Cmd::known_command(KnownCommand::XinfoGroups).arg(key)
     }
 
 
@@ -1563,7 +1564,7 @@ implement_commands! {
     #[cfg(feature = "streams")]
     #[cfg_attr(docsrs, doc(cfg(feature = "streams")))]
     fn xinfo_stream<K: ToRedisArgs>(key: K) {
-        cmd("XINFO").arg("STREAM").arg(key)
+        Cmd::known_command(KnownCommand::XinfoStream).arg(key)
     }
 
     /// Returns the number of messages for a given stream `key`.
@@ -1574,7 +1575,7 @@ implement_commands! {
     #[cfg(feature = "streams")]
     #[cfg_attr(docsrs, doc(cfg(feature = "streams")))]
     fn xlen<K: ToRedisArgs>(key: K) {
-        cmd("XLEN").arg(key)
+        Cmd::known_command(KnownCommand::Xlen).arg(key)
     }
 
 
@@ -1598,7 +1599,7 @@ implement_commands! {
         key: K,
         group: G
     )  {
-        cmd("XPENDING").arg(key).arg(group)
+        Cmd::known_command(KnownCommand::Xpending).arg(key).arg(group)
     }
 
 
@@ -1628,7 +1629,7 @@ implement_commands! {
         end: E,
         count: C
     )  {
-        cmd("XPENDING")
+        Cmd::known_command(KnownCommand::Xpending)
             .arg(key)
             .arg(group)
             .arg(start)
@@ -1664,7 +1665,7 @@ implement_commands! {
         count: C,
         consumer: CN
     ) {
-        cmd("XPENDING")
+        Cmd::known_command(KnownCommand::Xpending)
             .arg(key)
             .arg(group)
             .arg(start)
@@ -1691,7 +1692,7 @@ implement_commands! {
         start: S,
         end: E
     )  {
-        cmd("XRANGE").arg(key).arg(start).arg(end)
+        Cmd::known_command(KnownCommand::Xrange).arg(key).arg(start).arg(end)
     }
 
 
@@ -1704,7 +1705,7 @@ implement_commands! {
     #[cfg(feature = "streams")]
     #[cfg_attr(docsrs, doc(cfg(feature = "streams")))]
     fn xrange_all<K: ToRedisArgs>(key: K)  {
-        cmd("XRANGE").arg(key).arg("-").arg("+")
+        Cmd::known_command(KnownCommand::Xrange).arg(key).arg("-").arg("+")
     }
 
 
@@ -1721,7 +1722,7 @@ implement_commands! {
         end: E,
         count: C
     )  {
-        cmd("XRANGE")
+        Cmd::known_command(KnownCommand::Xrange)
             .arg(key)
             .arg(start)
             .arg(end)
@@ -1744,7 +1745,7 @@ implement_commands! {
         keys: &'a [K],
         ids: &'a [ID]
     ) {
-        cmd("XREAD").arg("STREAMS").arg(keys).arg(ids)
+        Cmd::known_command(KnownCommand::Xread).arg("STREAMS").arg(keys).arg(ids)
     }
 
     /// This method handles setting optional arguments for
@@ -1790,10 +1791,10 @@ implement_commands! {
         ids: &'a [ID],
         options: &'a streams::StreamReadOptions
     ) {
-        cmd(if options.read_only() {
-            "XREAD"
+        Cmd::known_command        (if options.read_only() {
+            KnownCommand::Xread
         } else {
-            "XREADGROUP"
+            KnownCommand::Xreadgroup
         })
         .arg(options)
         .arg("STREAMS")
@@ -1814,7 +1815,7 @@ implement_commands! {
         end: E,
         start: S
     ) {
-        cmd("XREVRANGE").arg(key).arg(end).arg(start)
+        Cmd::known_command(KnownCommand::Xrevrange).arg(key).arg(end).arg(start)
     }
 
     /// This is the reverse version of `xrange_all`.
@@ -1824,7 +1825,7 @@ implement_commands! {
     /// XREVRANGE key + -
     /// ```
     fn xrevrange_all<K: ToRedisArgs>(key: K) {
-        cmd("XREVRANGE").arg(key).arg("+").arg("-")
+        Cmd::known_command(KnownCommand::Xrevrange).arg(key).arg("+").arg("-")
     }
 
     /// This is the reverse version of `xrange_count`.
@@ -1841,7 +1842,7 @@ implement_commands! {
         start: S,
         count: C
     ) {
-        cmd("XREVRANGE")
+        Cmd::known_command(KnownCommand::Xrevrange)
             .arg(key)
             .arg(end)
             .arg(start)
@@ -1861,7 +1862,7 @@ implement_commands! {
         key: K,
         maxlen: streams::StreamMaxlen
     ) {
-        cmd("XTRIM").arg(key).arg(maxlen)
+        Cmd::known_command(KnownCommand::Xtrim).arg(key).arg(maxlen)
     }
 }
 
@@ -2159,7 +2160,7 @@ impl ToRedisArgs for SetOptions {
 
 /// Creates HELLO command for RESP3 with RedisConnectionInfo
 pub fn resp3_hello(connection_info: &RedisConnectionInfo) -> Cmd{
-    let mut hello_cmd = cmd("HELLO");
+    let mut hello_cmd = Cmd::known_command(KnownCommand::Hello);
     hello_cmd.arg("3");
     if connection_info.password.is_some() {
         let username:&str = match connection_info.username.as_ref() {

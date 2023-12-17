@@ -1,7 +1,7 @@
 use crate::cluster_topology::get_slot;
 use crate::cmd::{Arg, Cmd};
 use crate::types::Value;
-use crate::{ErrorKind, RedisResult};
+use crate::{ErrorKind, KnownCommand, RedisResult};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::iter::{Iterator, Once};
@@ -228,7 +228,7 @@ pub(crate) fn combine_and_sort_array_results<'a>(
     Ok(Value::Array(results))
 }
 
-fn get_route(is_readonly: bool, key: &[u8]) -> Route {
+pub(crate) fn get_route(is_readonly: bool, key: &[u8]) -> Route {
     let slot = get_slot(key);
     if is_readonly {
         Route::new(slot, SlotAddr::ReplicaOptional)
@@ -247,16 +247,16 @@ fn get_route(is_readonly: bool, key: &[u8]) -> Route {
 ///
 /// If all keys are routed to the same slot, there's no need to split the command,
 /// so a single node routing info will be returned.
-fn multi_shard<R>(
+pub(crate) fn multi_shard<R>(
     routable: &R,
-    cmd: &[u8],
+    is_readonly: bool,
+    response_policy: Option<ResponsePolicy>,
     first_key_index: usize,
     has_values: bool,
 ) -> Option<RoutingInfo>
 where
     R: Routable + ?Sized,
 {
-    let is_readonly = is_readonly_cmd(cmd);
     let mut routes = HashMap::new();
     let mut key_index = 0;
     while let Some(key) = routable.arg_idx(first_key_index + key_index) {
@@ -277,10 +277,7 @@ where
     Some(if routes.len() == 1 {
         RoutingInfo::SingleNode(SingleNodeRoutingInfo::SpecificNode(routes.pop().unwrap().0))
     } else {
-        RoutingInfo::MultiNode((
-            MultipleNodeRoutingInfo::MultiSlot(routes),
-            ResponsePolicy::for_command(cmd),
-        ))
+        RoutingInfo::MultiNode((MultipleNodeRoutingInfo::MultiSlot(routes), response_policy))
     })
 }
 
@@ -359,6 +356,10 @@ impl RoutingInfo {
     where
         R: Routable + ?Sized,
     {
+        if let Some(known_command) = r.known_command() {
+            return known_command.routing_info(r);
+        }
+
         let cmd = &r.command()?[..];
         if Self::is_all_nodes(cmd) {
             return Some(RoutingInfo::MultiNode((
@@ -391,8 +392,20 @@ impl RoutingInfo {
                 ResponsePolicy::for_command(cmd),
             ))),
 
-            b"MGET" | b"DEL" | b"EXISTS" | b"UNLINK" | b"TOUCH" => multi_shard(r, cmd, 1, false),
-            b"MSET" => multi_shard(r, cmd, 1, true),
+            b"MGET" | b"DEL" | b"EXISTS" | b"UNLINK" | b"TOUCH" => multi_shard(
+                r,
+                is_readonly_cmd(cmd),
+                ResponsePolicy::for_command(cmd),
+                1,
+                false,
+            ),
+            b"MSET" => multi_shard(
+                r,
+                is_readonly_cmd(cmd),
+                ResponsePolicy::for_command(cmd),
+                1,
+                true,
+            ),
             // TODO - special handling - b"SCAN"
             b"SCAN" | b"SHUTDOWN" | b"SLAVEOF" | b"REPLICAOF" | b"MOVE" | b"BITOP" => None,
             b"EVALSHA" | b"EVAL" => {
@@ -571,6 +584,12 @@ pub trait Routable {
 
     /// Returns index of argument that matches `candidate`, if it exists
     fn position(&self, candidate: &[u8]) -> Option<usize>;
+
+    /// Returns an enum representing a known command.
+    /// If a routable has a known command, it's assumed that its arguments don't contain the command.
+    fn known_command(&self) -> Option<KnownCommand> {
+        None
+    }
 }
 
 impl Routable for Cmd {
@@ -583,6 +602,10 @@ impl Routable for Cmd {
             Arg::Simple(d) => d.eq_ignore_ascii_case(candidate),
             _ => false,
         })
+    }
+
+    fn known_command(&self) -> Option<KnownCommand> {
+        self.known_command
     }
 }
 
