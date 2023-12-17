@@ -512,10 +512,10 @@ impl KnownCommand {
             | KnownCommand::Exists
             | KnownCommand::Unlink
             | KnownCommand::Touch => {
-                multi_shard(r, self.is_readonly(), self.response_policy(), 0, false)
+                multi_shard(r, self.is_readonly(), self.response_policy(), 1, false)
             }
             KnownCommand::Mset => {
-                multi_shard(r, self.is_readonly(), self.response_policy(), 0, true)
+                multi_shard(r, self.is_readonly(), self.response_policy(), 1, true)
             }
             // TODO - special handling - b"SCAN"
             KnownCommand::Scan

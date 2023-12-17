@@ -449,10 +449,13 @@ impl RoutingInfo {
 
 /// Returns true if the given `routable` represents a readonly command.
 pub fn is_readonly(routable: &impl Routable) -> bool {
-    match routable.command() {
-        Some(cmd) => is_readonly_cmd(cmd.as_slice()),
-        None => false,
-    }
+    routable
+        .known_command()
+        .map(|cmd| cmd.is_readonly())
+        .or(routable
+            .command()
+            .map(|cmd| is_readonly_cmd(cmd.as_slice())))
+        .unwrap_or_default()
 }
 
 /// Returns `true` if the given `cmd` is a readonly command.
