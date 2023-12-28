@@ -1914,6 +1914,38 @@ fn get_queried_node_id_if_master(cluster_nodes_output: Value) -> Option<String> 
         _ => panic!("Recieved unexpected response: {:?}", cluster_nodes_output),
     }
 }
+
+#[test]
+fn test_async_cluster_handle_complete_server_disconnect_without_panicking() {
+    let cluster = TestClusterContext::new_with_cluster_client_builder(
+        3,
+        0,
+        |builder| builder.retries(2),
+        false,
+    );
+
+    block_on_all(async move {
+        let mut connection = cluster.async_connection().await;
+        drop(cluster);
+        for _ in 0..5 {
+            let cmd = cmd("PING");
+
+            println!("sending");
+            let result: RedisResult<Value> = connection
+                .route_command(&cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
+                .await;
+            println!("{result:?}");
+            assert!(result.is_err());
+            // This will route to all nodes - different path through the code.
+            let result: RedisResult<Value> = connection.req_packed_command(&cmd).await;
+            println!("{result:?}");
+            assert!(result.is_err());
+        }
+        Ok::<_, RedisError>(())
+    })
+    .unwrap();
+}
+
 #[test]
 fn test_async_cluster_periodic_checks_update_topology_after_failover() {
     // This test aims to validate the functionality of periodic topology checks by detecting and updating topology changes.
