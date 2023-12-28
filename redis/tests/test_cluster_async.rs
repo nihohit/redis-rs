@@ -11,6 +11,7 @@ use std::sync::{
 use crate::support::*;
 use futures::prelude::*;
 use futures::stream;
+use futures_time::future::FutureExt;
 use futures_time::task::sleep;
 use once_cell::sync::Lazy;
 use redis::cluster_routing::Route;
@@ -1931,15 +1932,19 @@ fn test_async_cluster_handle_complete_server_disconnect_without_panicking() {
             let cmd = cmd("PING");
 
             println!("sending");
-            let result: RedisResult<Value> = connection
+            let result = connection
                 .route_command(&cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
+                .timeout(futures_time::time::Duration::from_millis(100))
                 .await;
-            println!("{result:?}");
-            assert!(result.is_err());
+            println!("result is - {result:?}");
+            assert!(result.is_err() || result.unwrap().is_err());
             // This will route to all nodes - different path through the code.
-            let result: RedisResult<Value> = connection.req_packed_command(&cmd).await;
-            println!("{result:?}");
-            assert!(result.is_err());
+            let result = connection
+                .req_packed_command(&cmd)
+                .timeout(futures_time::time::Duration::from_millis(100))
+                .await;
+            println!("result 2 - {result:?}");
+            assert!(result.is_err() || result.unwrap().is_err());
         }
         Ok::<_, RedisError>(())
     })

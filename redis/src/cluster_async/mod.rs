@@ -131,7 +131,7 @@ where
         cmd: &Cmd,
         routing: cluster_routing::RoutingInfo,
     ) -> RedisResult<Value> {
-        trace!("route_command");
+        println!("route_command {routing:?}");
         let (sender, receiver) = oneshot::channel();
         self.0
             .send(Message {
@@ -322,6 +322,7 @@ enum Response {
     Multiple(Vec<Value>),
 }
 
+#[derive(Debug)]
 enum OperationTarget {
     Node { identifier: ConnectionIdentifier },
     FanOut,
@@ -457,6 +458,7 @@ impl<C> Future for Request<C> {
                 let request = this.request.as_mut().unwrap();
 
                 if request.retry >= this.retry_params.number_of_retries {
+                    println!("done because out of retries");
                     self.respond(Err(err));
                     return Next::Done.into();
                 }
@@ -472,13 +474,14 @@ impl<C> Future for Request<C> {
                     }
                     OperationTarget::NoTargetFound => {
                         warn!("No connection found: `{err}`");
+                        println!("trigger refresh slots on no target");
                         return Next::RefreshSlots {
                             request: this.request.take().unwrap(),
                         }
                         .into();
                     }
                 };
-                trace!("Request error `{}` on node `{:?}", err, identifier);
+                println!("Request error `{}` on node `{:?}", err, identifier);
 
                 match err.kind() {
                     ErrorKind::Ask => {
@@ -808,6 +811,7 @@ where
 
     // Query a node to discover slot-> master mappings with retries
     async fn refresh_slots_with_retries(inner: Arc<InnerCore<C>>) -> RedisResult<()> {
+        println!("refresh_slots_with_retries");
         if inner
             .slot_refresh_in_progress
             .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -826,6 +830,7 @@ where
             Self::refresh_slots(inner.clone(), curr_retry).map_err(Error::from)
         })
         .await;
+        println!("refresh slots ended here");
         inner
             .slot_refresh_in_progress
             .store(false, Ordering::Relaxed);
@@ -892,7 +897,7 @@ where
 
     // Query a node to discover slot-> master mappings
     async fn refresh_slots(inner: Arc<InnerCore<C>>, curr_retry: usize) -> RedisResult<()> {
-        info!("refresh_slots started");
+        println!("refresh_slots started {curr_retry}");
         let read_guard = inner.conn_lock.read().await;
         let num_of_nodes = read_guard.len();
         const MAX_REQUESTED_NODES: usize = 50;
@@ -970,6 +975,7 @@ where
             .await;
 
         drop(read_guard);
+        println!("refresh_slots ended {curr_retry}");
         info!("refresh_slots found nodes:\n{new_connections}");
         // Replace the current slot map and connection vector with the new ones
         let mut write_guard = inner.conn_lock.write().await;
@@ -988,7 +994,7 @@ where
         core: Core<C>,
         response_policy: Option<ResponsePolicy>,
     ) -> OperationResult {
-        trace!("execute_on_multiple_nodes");
+        println!("execute_on_multiple_nodes");
         let connections_container = core.conn_lock.read().await;
 
         // This function maps the connections to senders & receivers of one-shot channels, and the receivers are mapped to `PendingRequest`s.
@@ -1073,6 +1079,7 @@ where
         routing: InternalRoutingInfo<C>,
         core: Core<C>,
     ) -> OperationResult {
+        // println!("try_cmd_request");
         let routing = match routing {
             // commands that are sent to multiple nodes are handled here.
             InternalRoutingInfo::MultiNode((multi_node_routing, response_policy)) => {
@@ -1091,9 +1098,11 @@ where
 
         // if we reached this point, we're sending the command only to single node, and we need to find the
         // right connection to the node.
-        let (identifier, mut conn) = Self::get_connection(routing, core)
-            .await
-            .map_err(|err| (OperationTarget::NoTargetFound, err))?;
+        let (identifier, mut conn) = Self::get_connection(routing, core).await.map_err(|err| {
+            let res = (OperationTarget::NoTargetFound, err);
+            // println!("try_cmd_request {res:?}");
+            res
+        })?;
         conn.req_packed_command(&cmd)
             .await
             .map(Response::Single)
@@ -1117,6 +1126,7 @@ where
     }
 
     async fn try_request(info: RequestInfo<C>, core: Core<C>) -> OperationResult {
+        println!("try_request");
         match info.cmd {
             CmdArg::Cmd { cmd, routing } => Self::try_cmd_request(cmd, routing, core).await,
             CmdArg::Pipeline {
@@ -1134,6 +1144,10 @@ where
                 .await
             }
         }
+        .map_err(|err| {
+            println!("try_request {err:?}");
+            err
+        })
     }
 
     async fn get_connection(
@@ -1216,16 +1230,17 @@ where
         match future {
             RecoverFuture::RecoverSlots(mut future) => match future.as_mut().poll(cx) {
                 Poll::Ready(Ok(_)) => {
-                    trace!("Recovered!");
+                    println!("Recovered!");
                     self.state = ConnectionState::PollComplete;
                     Poll::Ready(Ok(()))
                 }
                 Poll::Pending => {
                     self.state = ConnectionState::Recover(RecoverFuture::RecoverSlots(future));
-                    trace!("Recover not ready");
+                    println!("Recover not ready");
                     Poll::Pending
                 }
                 Poll::Ready(Err(err)) => {
+                    println!("Recovery failed");
                     self.state = ConnectionState::Recover(RecoverFuture::RecoverSlots(Box::pin(
                         Self::refresh_slots_with_retries(self.inner.clone()),
                     )));
@@ -1262,6 +1277,7 @@ where
                 }
 
                 let future = Self::try_request(request.info.clone(), self.inner.clone()).boxed();
+                println!("pushing request to in_flight queue");
                 self.in_flight_requests.push(Box::pin(Request {
                     retry_params: self.inner.cluster_params.retry_params.clone(),
                     request: Some(request),
@@ -1278,8 +1294,11 @@ where
                 Poll::Ready(None) | Poll::Pending => break,
             };
             match result {
-                Next::Done => {}
+                Next::Done => {
+                    println!("done");
+                }
                 Next::Retry { request } => {
+                    println!("retry");
                     let future = Self::try_request(request.info.clone(), self.inner.clone());
                     self.in_flight_requests.push(Box::pin(Request {
                         retry_params: self.inner.cluster_params.retry_params.clone(),
@@ -1290,6 +1309,7 @@ where
                     }));
                 }
                 Next::RefreshSlots { request } => {
+                    println!("RefreshSlots received");
                     poll_flush_action =
                         poll_flush_action.change_state(PollFlushAction::RebuildSlots);
                     let future = Self::try_request(request.info.clone(), self.inner.clone());
@@ -1304,6 +1324,7 @@ where
                 Next::Reconnect {
                     request, target, ..
                 } => {
+                    println!("Reconnect");
                     poll_flush_action =
                         poll_flush_action.change_state(PollFlushAction::Reconnect(vec![target]));
                     self.inner.pending_requests.lock().unwrap().push(request);
@@ -1440,7 +1461,7 @@ where
         let Message { cmd, sender } = msg;
 
         let info = RequestInfo { cmd };
-
+        println!("pushing message");
         self.inner
             .pending_requests
             .lock()
@@ -1450,6 +1471,7 @@ where
                 sender,
                 info,
             });
+        println!("message pushed");
         Ok(())
     }
 
