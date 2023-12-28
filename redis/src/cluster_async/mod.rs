@@ -585,6 +585,7 @@ where
             state: ConnectionState::PollComplete,
             shutdown_flag: shutdown_flag.clone(),
         };
+        println!("call from new");
         Self::refresh_slots_with_retries(connection.inner.clone()).await?;
         if let Some(duration) = topology_checks_interval {
             let periodic_task = ClusterConnInner::periodic_topology_check(
@@ -858,6 +859,7 @@ where
             })
             .await;
             if let Ok(true) = topology_check_res {
+                println!("called from periodic check");
                 let _ = Self::refresh_slots_with_retries(inner.clone()).await;
             };
         }
@@ -1240,7 +1242,7 @@ where
                     Poll::Pending
                 }
                 Poll::Ready(Err(err)) => {
-                    println!("Recovery failed");
+                    println!("Rcalled from recovery failed");
                     self.state = ConnectionState::Recover(RecoverFuture::RecoverSlots(Box::pin(
                         Self::refresh_slots_with_retries(self.inner.clone()),
                     )));
@@ -1504,6 +1506,7 @@ where
                 ConnectionState::PollComplete => match ready!(self.poll_complete(cx)) {
                     PollFlushAction::None => return Poll::Ready(Ok(())),
                     PollFlushAction::RebuildSlots => {
+                        println!("called rebuild slots");
                         self.state =
                             ConnectionState::Recover(RecoverFuture::RecoverSlots(Box::pin(
                                 ClusterConnInner::refresh_slots_with_retries(self.inner.clone()),
