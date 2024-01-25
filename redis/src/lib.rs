@@ -448,9 +448,8 @@ mod cluster_slotmap;
 #[cfg(feature = "cluster")]
 mod cluster_client;
 
-// for testing purposes
-#[cfg(feature = "cluster")]
-pub use crate::cluster_client::ClusterParams;
+/// Used exclusively for testing. This won't be stable, don't take a dependency on this module.
+pub mod testing;
 
 #[cfg(feature = "cluster")]
 mod cluster_pipeline;

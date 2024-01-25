@@ -8,8 +8,9 @@ use std::sync::{
 use crate::support::*;
 use redis::{
     cluster::{cluster_pipe, ClusterClient},
-    cmd, parse_redis_value, Commands, ConnectionLike, ErrorKind, ProtocolVersion, RedisError,
-    Value,
+    cmd, parse_redis_value,
+    testing::mock_connection::{contains_slice, respond_startup},
+    Commands, ConnectionLike, ErrorKind, ProtocolVersion, RedisError, Value,
 };
 
 #[test]

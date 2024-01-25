@@ -77,8 +77,7 @@ impl RetryParams {
 
 /// Redis cluster specific parameters.
 #[derive(Default, Clone)]
-#[doc(hidden)]
-pub struct ClusterParams {
+pub(crate) struct ClusterParams {
     pub(crate) password: Option<String>,
     pub(crate) username: Option<String>,
     pub(crate) read_from_replicas: ReadFromReplicaStrategy,

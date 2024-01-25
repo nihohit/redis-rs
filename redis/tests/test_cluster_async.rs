@@ -16,6 +16,9 @@ use once_cell::sync::Lazy;
 use redis::cluster_routing::Route;
 use redis::cluster_routing::SingleNodeRoutingInfo;
 use redis::cluster_routing::SlotAddr;
+use redis::testing::mock_connection::{
+    contains_slice, respond_startup, MockConnection, MockConnectionBehavior,
+};
 use redis::ProtocolVersion;
 
 use redis::{
@@ -593,7 +596,7 @@ fn test_cluster_async_cannot_connect_to_server_with_unknown_host_name() {
     };
     let client_builder = ClusterClient::builder(vec![&*format!("redis://{name}")]);
     let client = client_builder.build().unwrap();
-    add_new_mock_connection_behavior(name, Arc::new(handler));
+    let _handle = MockConnectionBehavior::register_new(name, Arc::new(handler));
     let connection = client.get_generic_connection::<MockConnection>();
     assert!(connection.is_err());
     let err = connection.err().unwrap();

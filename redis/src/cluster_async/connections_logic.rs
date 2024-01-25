@@ -1,3 +1,4 @@
+#![cfg(feature = "cluster-async")]
 use super::{AsyncClusterNode, Connect};
 use crate::{
     aio::{get_socket_addrs, ConnectionLike},
@@ -53,8 +54,7 @@ where
     }
 }
 
-#[doc(hidden)]
-pub async fn connect_and_check<C>(
+pub(crate) async fn connect_and_check<C>(
     node: &str,
     params: ClusterParams,
     socket_addr: Option<SocketAddr>,
@@ -99,4 +99,49 @@ pub(crate) fn get_host_and_port_from_addr(addr: &str) -> Option<(&str, u16)> {
     let host = parts.first().unwrap();
     let port = parts.get(1).unwrap();
     port.parse::<u16>().ok().map(|port| (*host, port))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        cluster_async::connections_logic::connect_and_check,
+        testing::mock_connection::{
+            modify_mock_connection_behavior, respond_startup, ConnectionIPReturnType,
+            MockConnection, MockConnectionBehavior,
+        },
+    };
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        sync::Arc,
+    };
+
+    #[tokio::test]
+    async fn test_connect_and_check_connect_successfully() {
+        // Test that upon refreshing all connections, if both connections were successful,
+        // the returned node contains both user and management connection
+        let name = "test_connect_and_check_connect_successfully";
+
+        let _handler = MockConnectionBehavior::register_new(
+            name,
+            Arc::new(move |cmd, _| {
+                respond_startup(name, cmd)?;
+                Ok(())
+            }),
+        );
+
+        let expected_ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        modify_mock_connection_behavior(name, |behavior| {
+            behavior.returned_ip_type = ConnectionIPReturnType::Specified(expected_ip)
+        });
+
+        let (_conn, ip) = connect_and_check::<MockConnection>(
+            &format!("{name}:6379"),
+            ClusterParams::default(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(ip, Some(expected_ip));
+    }
 }

@@ -1,243 +1,16 @@
+#![cfg(test)]
 use redis::{
-    cluster::{self, ClusterClient, ClusterClientBuilder},
-    ErrorKind, FromRedisValue, RedisError,
-};
-
-use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, RwLock,
+    cluster::{ClusterClient, ClusterClientBuilder},
+    testing::mock_connection::{
+        contains_slice, MockConnection, MockConnectionBehavior, RemoveHandler,
     },
-    time::Duration,
+    RedisResult, Value,
 };
 
-use {
-    once_cell::sync::Lazy,
-    redis::{IntoConnectionInfo, RedisResult, Value},
-};
+use std::sync::Arc;
 
-#[cfg(feature = "cluster-async")]
-use redis::{aio, cluster_async, RedisFuture};
-
-#[cfg(feature = "cluster-async")]
-use futures::future;
-
-use redis::PushKind;
 #[cfg(feature = "cluster-async")]
 use tokio::runtime::Runtime;
-
-type Handler = Arc<dyn Fn(&[u8], u16) -> Result<(), RedisResult<Value>> + Send + Sync>;
-
-pub struct MockConnectionBehavior {
-    pub id: String,
-    pub handler: Handler,
-    pub connection_id_provider: AtomicUsize,
-    pub returned_ip_type: ConnectionIPReturnType,
-    pub return_connection_err: ShouldReturnConnectionError,
-}
-
-impl MockConnectionBehavior {
-    pub fn new(id: &str, handler: Handler) -> Self {
-        Self {
-            id: id.to_string(),
-            handler,
-            connection_id_provider: AtomicUsize::new(0),
-            returned_ip_type: ConnectionIPReturnType::default(),
-            return_connection_err: ShouldReturnConnectionError::default(),
-        }
-    }
-
-    fn get_handler(&self) -> Handler {
-        self.handler.clone()
-    }
-}
-
-pub fn add_new_mock_connection_behavior(name: &str, handler: Handler) {
-    MOCK_CONN_BEHAVIORS
-        .write()
-        .unwrap()
-        .insert(name.to_string(), MockConnectionBehavior::new(name, handler));
-}
-
-pub fn modify_mock_connection_behavior(name: &str, func: impl FnOnce(&mut MockConnectionBehavior)) {
-    func(
-        MOCK_CONN_BEHAVIORS
-            .write()
-            .unwrap()
-            .get_mut(name)
-            .expect("Handler `{name}` was not installed"),
-    );
-}
-
-pub fn get_mock_connection_handler(name: &str) -> Handler {
-    MOCK_CONN_BEHAVIORS
-        .read()
-        .unwrap()
-        .get(name)
-        .expect("Handler `{name}` was not installed")
-        .get_handler()
-}
-
-static MOCK_CONN_BEHAVIORS: Lazy<RwLock<HashMap<String, MockConnectionBehavior>>> =
-    Lazy::new(Default::default);
-
-#[derive(Default)]
-pub enum ConnectionIPReturnType {
-    /// New connections' IP will be returned as None
-    #[default]
-    None,
-    /// Creates connections with the specified IP
-    Specified(IpAddr),
-    /// Each new connection will be created with a different IP based on the passed atomic integer
-    Different(AtomicUsize),
-}
-
-#[derive(Default)]
-pub enum ShouldReturnConnectionError {
-    /// Don't return a connection error
-    #[default]
-    No,
-    /// Always return a connection error
-    Yes,
-    /// Return connection error when the internal index is an odd number
-    OnOddIdx(AtomicUsize),
-}
-
-#[derive(Clone)]
-pub struct MockConnection {
-    pub id: usize,
-    pub handler: Handler,
-    pub port: u16,
-}
-
-#[cfg(feature = "cluster-async")]
-impl cluster_async::Connect for MockConnection {
-    fn connect<'a, T>(
-        info: T,
-        _response_timeout: Duration,
-        _connection_timeout: Duration,
-        _socket_addr: Option<SocketAddr>,
-    ) -> RedisFuture<'a, (Self, Option<IpAddr>)>
-    where
-        T: IntoConnectionInfo + Send + 'a,
-    {
-        let info = info.into_connection_info().unwrap();
-
-        let (name, port) = match &info.addr {
-            redis::ConnectionAddr::Tcp(addr, port) => (addr, *port),
-            _ => unreachable!(),
-        };
-        let binding = MOCK_CONN_BEHAVIORS.read().unwrap();
-        let conn_utils = binding
-            .get(name)
-            .unwrap_or_else(|| panic!("MockConnectionUtils for `{name}` were not installed"));
-        let conn_err = Box::pin(future::err(RedisError::from(std::io::Error::new(
-            std::io::ErrorKind::ConnectionReset,
-            "mock-io-error",
-        ))));
-        match &conn_utils.return_connection_err {
-            ShouldReturnConnectionError::No => {}
-            ShouldReturnConnectionError::Yes => return conn_err,
-            ShouldReturnConnectionError::OnOddIdx(curr_idx) => {
-                if curr_idx.fetch_add(1, Ordering::SeqCst) % 2 != 0 {
-                    // raise an error on each odd number
-                    return conn_err;
-                }
-            }
-        }
-
-        let ip = match &conn_utils.returned_ip_type {
-            ConnectionIPReturnType::Specified(ip) => Some(*ip),
-            ConnectionIPReturnType::Different(ip_getter) => {
-                let first_ip_num = ip_getter.fetch_add(1, Ordering::SeqCst) as u8;
-                Some(IpAddr::V4(Ipv4Addr::new(first_ip_num, 0, 0, 0)))
-            }
-            ConnectionIPReturnType::None => None,
-        };
-
-        Box::pin(future::ok((
-            MockConnection {
-                id: conn_utils
-                    .connection_id_provider
-                    .fetch_add(1, Ordering::SeqCst),
-                handler: conn_utils.get_handler(),
-                port,
-            },
-            ip,
-        )))
-    }
-}
-
-impl cluster::Connect for MockConnection {
-    fn connect<'a, T>(info: T, _timeout: Option<Duration>) -> RedisResult<Self>
-    where
-        T: IntoConnectionInfo,
-    {
-        let info = info.into_connection_info().unwrap();
-
-        let (name, port) = match &info.addr {
-            redis::ConnectionAddr::Tcp(addr, port) => (addr, *port),
-            _ => unreachable!(),
-        };
-        let binding = MOCK_CONN_BEHAVIORS.read().unwrap();
-        let conn_utils = binding
-            .get(name)
-            .unwrap_or_else(|| panic!("MockConnectionUtils for `{name}` were not installed"));
-        Ok(MockConnection {
-            id: conn_utils
-                .connection_id_provider
-                .fetch_add(1, Ordering::SeqCst),
-            handler: conn_utils.get_handler(),
-            port,
-        })
-    }
-
-    fn send_packed_command(&mut self, _cmd: &[u8]) -> RedisResult<()> {
-        Ok(())
-    }
-
-    fn set_write_timeout(&self, _dur: Option<std::time::Duration>) -> RedisResult<()> {
-        Ok(())
-    }
-
-    fn set_read_timeout(&self, _dur: Option<std::time::Duration>) -> RedisResult<()> {
-        Ok(())
-    }
-
-    fn recv_response(&mut self) -> RedisResult<Value> {
-        Ok(Value::Nil)
-    }
-}
-
-pub fn contains_slice(xs: &[u8], ys: &[u8]) -> bool {
-    for i in 0..xs.len() {
-        if xs[i..].starts_with(ys) {
-            return true;
-        }
-    }
-    false
-}
-
-pub fn respond_startup(name: &str, cmd: &[u8]) -> Result<(), RedisResult<Value>> {
-    if contains_slice(cmd, b"PING") || contains_slice(cmd, b"SETNAME") {
-        Err(Ok(Value::SimpleString("OK".into())))
-    } else if contains_slice(cmd, b"CLUSTER") && contains_slice(cmd, b"SLOTS") {
-        Err(Ok(Value::Array(vec![Value::Array(vec![
-            Value::Int(0),
-            Value::Int(16383),
-            Value::Array(vec![
-                Value::BulkString(name.as_bytes().to_vec()),
-                Value::Int(6379),
-            ]),
-        ])])))
-    } else if contains_slice(cmd, b"READONLY") {
-        Err(Ok(Value::SimpleString("OK".into())))
-    } else {
-        Ok(())
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct MockSlotRange {
@@ -322,78 +95,6 @@ pub fn respond_startup_with_replica_using_config(
     }
 }
 
-#[cfg(feature = "cluster-async")]
-impl aio::ConnectionLike for MockConnection {
-    fn req_packed_command<'a>(&'a mut self, cmd: &'a redis::Cmd) -> RedisFuture<'a, Value> {
-        Box::pin(future::ready(
-            (self.handler)(&cmd.get_packed_command(), self.port)
-                .expect_err("Handler did not specify a response"),
-        ))
-    }
-
-    fn req_packed_commands<'a>(
-        &'a mut self,
-        _pipeline: &'a redis::Pipeline,
-        _offset: usize,
-        _count: usize,
-    ) -> RedisFuture<'a, Vec<Value>> {
-        Box::pin(future::ok(vec![]))
-    }
-
-    fn get_db(&self) -> i64 {
-        0
-    }
-}
-
-impl redis::ConnectionLike for MockConnection {
-    fn req_packed_command(&mut self, cmd: &[u8]) -> RedisResult<Value> {
-        (self.handler)(cmd, self.port).expect_err("Handler did not specify a response")
-    }
-
-    fn req_packed_commands(
-        &mut self,
-        cmd: &[u8],
-        offset: usize,
-        _count: usize,
-    ) -> RedisResult<Vec<Value>> {
-        let res = (self.handler)(cmd, self.port).expect_err("Handler did not specify a response");
-        match res {
-            Err(err) => Err(err),
-            Ok(res) => {
-                if let Value::Array(results) = res {
-                    match results.into_iter().nth(offset) {
-                        Some(Value::Array(res)) => Ok(res),
-                        _ => Err((ErrorKind::ResponseError, "non-array response").into()),
-                    }
-                } else {
-                    Err((
-                        ErrorKind::ResponseError,
-                        "non-array response",
-                        String::from_redis_value(&res).unwrap(),
-                    )
-                        .into())
-                }
-            }
-        }
-    }
-
-    fn get_db(&self) -> i64 {
-        0
-    }
-
-    fn check_connection(&mut self) -> bool {
-        true
-    }
-
-    fn is_open(&self) -> bool {
-        true
-    }
-
-    fn execute_push_message(&mut self, _kind: PushKind, _data: Vec<Value>) {
-        // TODO - implement handling RESP3 push messages
-    }
-}
-
 pub struct MockEnv {
     #[cfg(feature = "cluster-async")]
     pub runtime: Runtime,
@@ -403,16 +104,6 @@ pub struct MockEnv {
     pub async_connection: redis::cluster_async::ClusterConnection<MockConnection>,
     #[allow(unused)]
     pub handler: RemoveHandler,
-}
-
-pub struct RemoveHandler(Vec<String>);
-
-impl Drop for RemoveHandler {
-    fn drop(&mut self) {
-        for id in &self.0 {
-            MOCK_CONN_BEHAVIORS.write().unwrap().remove(id);
-        }
-    }
 }
 
 impl MockEnv {
@@ -440,7 +131,10 @@ impl MockEnv {
             .unwrap();
 
         let id = id.to_string();
-        add_new_mock_connection_behavior(&id, Arc::new(move |cmd, port| handler(cmd, port)));
+        let remove_handler = MockConnectionBehavior::register_new(
+            &id,
+            Arc::new(move |cmd, port| handler(cmd, port)),
+        );
         let client = client_builder.build().unwrap();
         let connection = client.get_generic_connection().unwrap();
         #[cfg(feature = "cluster-async")]
@@ -454,7 +148,7 @@ impl MockEnv {
             connection,
             #[cfg(feature = "cluster-async")]
             async_connection,
-            handler: RemoveHandler(vec![id]),
+            handler: remove_handler,
         }
     }
 }
