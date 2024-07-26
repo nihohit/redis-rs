@@ -2552,7 +2552,7 @@ impl ToRedisArgs for ExpireOption {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// A push message from the server.
 pub struct PushInfo {
     /// Push Kind

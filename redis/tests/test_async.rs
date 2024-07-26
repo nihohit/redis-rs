@@ -671,6 +671,8 @@ mod basic_async {
     mod pub_sub {
         use std::time::Duration;
 
+        use redis::PushInfo;
+
         use super::*;
 
         #[test]
@@ -822,13 +824,15 @@ mod basic_async {
                 }
                 for i in 0..pub_count {
                     let push = rx.recv().await.unwrap();
-                    assert_eq!(push.kind, PushKind::Message);
                     assert_eq!(
-                        push.data,
-                        vec![
-                            Value::BulkString("phonewave".as_bytes().to_vec()),
-                            Value::BulkString(format!("banana {i}").into_bytes())
-                        ]
+                        push,
+                        PushInfo {
+                            kind: PushKind::Message,
+                            data: vec![
+                                Value::BulkString("phonewave".as_bytes().to_vec()),
+                                Value::BulkString(format!("banana {i}").into_bytes())
+                            ]
+                        }
                     );
                 }
                 assert!(rx.try_recv().is_err());
@@ -838,19 +842,30 @@ mod basic_async {
                     .publish(channel_name.clone(), "banana!")
                     .await?;
                 let push = rx.recv().await.unwrap();
-                assert_eq!(push.kind, PushKind::Message);
                 assert_eq!(
-                    push.data,
-                    vec![
-                        Value::BulkString("phonewave".as_bytes().to_vec()),
-                        Value::BulkString("banana!".as_bytes().to_vec())
-                    ]
+                    push,
+                    PushInfo {
+                        kind: PushKind::Message,
+                        data: vec![
+                            Value::BulkString("phonewave".as_bytes().to_vec()),
+                            Value::BulkString("banana!".as_bytes().to_vec())
+                        ]
+                    }
                 );
 
                 //Giving none for channel id should unsubscribe all subscriptions from that channel and send unsubcribe command to server.
                 conn.unsubscribe(channel_name.clone()).await?;
                 let push = rx.recv().await.unwrap();
-                assert_eq!(push.kind, PushKind::Unsubscribe);
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Unsubscribe,
+                        data: vec![
+                            Value::BulkString("phonewave".as_bytes().to_vec()),
+                            Value::Int(0)
+                        ]
+                    }
+                );
                 let _: () = publish_conn
                     .publish(channel_name.clone(), "banana!")
                     .await?;
