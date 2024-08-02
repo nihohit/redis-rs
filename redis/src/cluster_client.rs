@@ -1,5 +1,5 @@
 use crate::connection::{ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
-use crate::types::{ErrorKind, ProtocolVersion, RedisError, RedisResult};
+use crate::types::{AsyncPushSender, ErrorKind, ProtocolVersion, RedisError, RedisResult};
 use crate::{cluster, cluster::TlsMode};
 use rand::Rng;
 use std::time::Duration;
@@ -31,6 +31,8 @@ struct BuilderParams {
     connection_timeout: Option<Duration>,
     response_timeout: Option<Duration>,
     protocol: ProtocolVersion,
+    #[cfg(feature = "aio")]
+    async_push_sender: Option<AsyncPushSender>,
 }
 
 #[derive(Clone)]
@@ -85,6 +87,8 @@ pub(crate) struct ClusterParams {
     pub(crate) connection_timeout: Duration,
     pub(crate) response_timeout: Duration,
     pub(crate) protocol: ProtocolVersion,
+    #[cfg(feature = "aio")]
+    pub(crate) async_push_sender: Option<AsyncPushSender>,
 }
 
 impl ClusterParams {
@@ -109,6 +113,7 @@ impl ClusterParams {
             connection_timeout: value.connection_timeout.unwrap_or(Duration::from_secs(1)),
             response_timeout: value.response_timeout.unwrap_or(Duration::MAX),
             protocol: value.protocol,
+            async_push_sender: value.async_push_sender,
         })
     }
 }
@@ -336,6 +341,13 @@ impl ClusterClientBuilder {
     #[deprecated(since = "0.22.0", note = "Use read_from_replicas()")]
     pub fn readonly(mut self, read_from_replicas: bool) -> ClusterClientBuilder {
         self.builder_params.read_from_replicas = read_from_replicas;
+        self
+    }
+
+    #[cfg(feature = "aio")]
+    /// Use the passed sender in asynchronous cluster connections.
+    pub fn use_async_push_sender(mut self, push_sender: AsyncPushSender) -> ClusterClientBuilder {
+        self.builder_params.async_push_sender = Some(push_sender);
         self
     }
 }

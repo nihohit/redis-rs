@@ -269,12 +269,12 @@ mod cluster_async {
                 result,
                 Value::Map(vec![
                     (
-                        Value::BulkString("foo".as_bytes().to_vec()),
-                        Value::BulkString("baz".as_bytes().to_vec())
+                        Value::BulkString(b"foo".to_vec()),
+                        Value::BulkString(b"baz".to_vec())
                     ),
                     (
-                        Value::BulkString("bar".as_bytes().to_vec()),
-                        Value::BulkString("foobar".as_bytes().to_vec())
+                        Value::BulkString(b"bar".to_vec()),
+                        Value::BulkString(b"foobar".to_vec())
                     )
                 ])
             );
@@ -612,10 +612,7 @@ mod cluster_async {
                     Value::Array(vec![
                         Value::Int(7001),
                         Value::Int(16383),
-                        Value::Array(vec![
-                            Value::BulkString("?".as_bytes().to_vec()),
-                            Value::Int(6380),
-                        ]),
+                        Value::Array(vec![Value::BulkString(b"?".to_vec()), Value::Int(6380)]),
                     ]),
                 ])))
             } else {
@@ -1628,7 +1625,7 @@ mod cluster_async {
             move |received_cmd: &[u8], port| {
                 respond_startup_with_replica_using_config(name, received_cmd, None)?;
                 if port == 6381 {
-                    return Err(Ok(Value::BulkString("foo".as_bytes().to_vec())));
+                    return Err(Ok(Value::BulkString(b"foo".to_vec())));
                 }
                 Err(Ok(Value::Nil))
             },
@@ -2179,6 +2176,452 @@ mod cluster_async {
             Ok(())
         })
         .unwrap();
+    }
+
+    mod pub_sub {
+        use redis::{PushInfo, PushKind};
+        use tokio::join;
+
+        use super::*;
+
+        #[test]
+        fn pub_sub_subscription() {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| {
+                builder
+                    .use_protocol(ProtocolVersion::RESP3)
+                    .use_async_push_sender(tx.clone())
+            });
+
+            block_on_all(async move {
+                let (mut publish_conn, mut pubsub_conn) =
+                    join!(ctx.async_connection(), ctx.async_connection());
+
+                let _: () = pubsub_conn.subscribe("regular-phonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Subscribe,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::Int(1)
+                        ]
+                    }
+                );
+
+                let _: () = pubsub_conn.psubscribe("phonewave*").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::PSubscribe,
+                        data: vec![Value::BulkString(b"phonewave*".to_vec()), Value::Int(2)]
+                    }
+                );
+
+                let _: () = pubsub_conn.ssubscribe("sphonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::SSubscribe,
+                        data: vec![Value::BulkString(b"sphonewave".to_vec()), Value::Int(1)]
+                    }
+                );
+
+                let _: () = publish_conn.publish("regular-phonewave", "banana").await?;
+
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Message,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::BulkString(b"banana".to_vec()),
+                        ]
+                    }
+                );
+
+                let _: () = publish_conn.publish("phonewave-pattern", "banana").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::PMessage,
+                        data: vec![
+                            Value::BulkString(b"phonewave*".to_vec()),
+                            Value::BulkString(b"phonewave-pattern".to_vec()),
+                            Value::BulkString(b"banana".to_vec()),
+                        ]
+                    }
+                );
+
+                let _: () = publish_conn.spublish("sphonewave", "banana").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::SMessage,
+                        data: vec![
+                            Value::BulkString(b"sphonewave".to_vec()),
+                            Value::BulkString(b"banana".to_vec()),
+                        ]
+                    }
+                );
+
+                Ok::<_, RedisError>(())
+            })
+            .unwrap();
+        }
+
+        #[test]
+        fn pub_sub_unsubscription() {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| {
+                builder
+                    .use_protocol(ProtocolVersion::RESP3)
+                    .use_async_push_sender(tx.clone())
+            });
+
+            block_on_all(async move {
+                let (mut publish_conn, mut pubsub_conn) =
+                    join!(ctx.async_connection(), ctx.async_connection());
+
+                let _: () = pubsub_conn.subscribe("regular-phonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Subscribe,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::Int(1)
+                        ]
+                    }
+                );
+                let _: () = pubsub_conn.unsubscribe("regular-phonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Unsubscribe,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::Int(0)
+                        ]
+                    }
+                );
+
+                let _: () = pubsub_conn.psubscribe("phonewave*").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::PSubscribe,
+                        data: vec![Value::BulkString(b"phonewave*".to_vec()), Value::Int(1)]
+                    }
+                );
+                let _: () = pubsub_conn.punsubscribe("phonewave*").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::PUnsubscribe,
+                        data: vec![Value::BulkString(b"phonewave*".to_vec()), Value::Int(0)]
+                    }
+                );
+
+                let _: () = pubsub_conn.ssubscribe("sphonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::SSubscribe,
+                        data: vec![Value::BulkString(b"sphonewave".to_vec()), Value::Int(1)]
+                    }
+                );
+                let _: () = pubsub_conn.sunsubscribe("sphonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::SUnsubscribe,
+                        data: vec![Value::BulkString(b"sphonewave".to_vec()), Value::Int(0)]
+                    }
+                );
+
+                let _: () = publish_conn.publish("regular-phonewave", "banana").await?;
+                let _: () = publish_conn.publish("phonewave-pattern", "banana").await?;
+                let _: () = publish_conn.spublish("sphonewave", "banana").await?;
+
+                assert_eq!(
+                    rx.try_recv(),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                );
+
+                Ok::<_, RedisError>(())
+            })
+            .unwrap();
+        }
+
+        #[test]
+        fn pub_sub_multiple() {
+            // In this test we subscribe on all subscription variations to 3 channels in a single call, then unsubscribe from 2 channels.
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| {
+                builder
+                    .use_protocol(ProtocolVersion::RESP3)
+                    .use_async_push_sender(tx.clone())
+            });
+
+            block_on_all(async move {
+                let mut pubsub_conn = ctx.async_connection().await;
+
+                let _: () = pubsub_conn
+                    .subscribe(&[
+                        "regular-phonewave1",
+                        "regular-phonewave2",
+                        "regular-phonewave3",
+                    ])
+                    .await?;
+                for i in 1..4 {
+                    let push = rx.recv().await.unwrap();
+                    assert_eq!(
+                        push,
+                        PushInfo {
+                            kind: PushKind::Subscribe,
+                            data: vec![
+                                Value::BulkString(
+                                    format!("regular-phonewave{i}").as_bytes().to_vec()
+                                ),
+                                Value::Int(i)
+                            ]
+                        }
+                    );
+                }
+                let _: () = pubsub_conn
+                    .unsubscribe(&["regular-phonewave1", "regular-phonewave2"])
+                    .await?;
+                for i in 1..3 {
+                    let push = rx.recv().await.unwrap();
+                    assert_eq!(
+                        push,
+                        PushInfo {
+                            kind: PushKind::Unsubscribe,
+                            data: vec![
+                                Value::BulkString(
+                                    format!("regular-phonewave{i}").as_bytes().to_vec()
+                                ),
+                                Value::Int(3 - i)
+                            ]
+                        }
+                    );
+                }
+
+                let _: () = pubsub_conn
+                    .psubscribe(&["phonewave*1", "phonewave*2", "phonewave*3"])
+                    .await?;
+                for i in 1..4 {
+                    let push = rx.recv().await.unwrap();
+                    assert_eq!(
+                        push,
+                        PushInfo {
+                            kind: PushKind::PSubscribe,
+                            data: vec![
+                                Value::BulkString(format!("phonewave*{i}").as_bytes().to_vec()),
+                                Value::Int(i)
+                            ]
+                        }
+                    );
+                }
+
+                let _: () = pubsub_conn
+                    .punsubscribe(&["phonewave*1", "phonewave*2"])
+                    .await?;
+                for i in 1..3 {
+                    let push = rx.recv().await.unwrap();
+                    assert_eq!(
+                        push,
+                        PushInfo {
+                            kind: PushKind::PUnsubscribe,
+                            data: vec![
+                                Value::BulkString(format!("phonewave*{i}").as_bytes().to_vec()),
+                                Value::Int(3 - i)
+                            ]
+                        }
+                    );
+                }
+
+                // we use the curly braces in order to avoid cross slots errors.
+                let _: () = pubsub_conn
+                    .ssubscribe(&["{sphonewave}1", "{sphonewave}2", "{sphonewave}3"])
+                    .await?;
+                for i in 1..4 {
+                    let push = rx.recv().await.unwrap();
+                    assert_eq!(
+                        push,
+                        PushInfo {
+                            kind: PushKind::SSubscribe,
+                            data: vec![
+                                Value::BulkString(format!("{{sphonewave}}{i}").as_bytes().to_vec()),
+                                Value::Int(i)
+                            ]
+                        }
+                    );
+                }
+
+                let _: () = pubsub_conn
+                    .sunsubscribe(&["{sphonewave}1", "{sphonewave}2"])
+                    .await?;
+                for i in 1..3 {
+                    let push = rx.recv().await.unwrap();
+                    assert_eq!(
+                        push,
+                        PushInfo {
+                            kind: PushKind::SUnsubscribe,
+                            data: vec![
+                                Value::BulkString(format!("{{sphonewave}}{i}").as_bytes().to_vec()),
+                                Value::Int(3 - i)
+                            ]
+                        }
+                    );
+                }
+
+                assert_eq!(
+                    rx.try_recv(),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                );
+
+                Ok::<_, RedisError>(())
+            })
+            .unwrap();
+        }
+
+        #[test]
+        fn push_sender_reconnect_after_disconnect() {
+            // in this test we will subscribe to channels, then restart the server, and check that the connection
+            // doesn't send disconnect message, but instead resubscribes automatically.
+
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| {
+                builder
+                    .use_protocol(ProtocolVersion::RESP3)
+                    .use_async_push_sender(tx.clone())
+            });
+
+            block_on_all(async move {
+                let ports: Vec<_> = ctx
+                    .nodes
+                    .iter()
+                    .map(|info| match info.addr {
+                        redis::ConnectionAddr::Tcp(_, port) => port,
+                        redis::ConnectionAddr::TcpTls { port, .. } => port,
+                        redis::ConnectionAddr::Unix(_) => {
+                            panic!("no unix sockets in cluster tests")
+                        }
+                    })
+                    .collect();
+
+                let (mut publish_conn, mut pubsub_conn) =
+                    join!(ctx.async_connection(), ctx.async_connection());
+
+                let _: () = pubsub_conn.subscribe("regular-phonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Subscribe,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::Int(1)
+                        ]
+                    }
+                );
+
+                let _: () = pubsub_conn.psubscribe("phonewave*").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::PSubscribe,
+                        data: vec![Value::BulkString(b"phonewave*".to_vec()), Value::Int(2)]
+                    }
+                );
+
+                let _: () = pubsub_conn.ssubscribe("sphonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::SSubscribe,
+                        data: vec![Value::BulkString(b"sphonewave".to_vec()), Value::Int(1)]
+                    }
+                );
+
+                drop(ctx);
+
+                // recreate cluster
+                let _cluster = RedisCluster::new(RedisClusterConfiguration {
+                    ports: ports.clone(),
+                    ..Default::default()
+                });
+
+                // sleep to allow cluster to reconnect
+                futures_time::task::sleep(futures_time::time::Duration::from_millis(100)).await;
+
+                // verify that we didn't get any disconnect notices.
+                assert_eq!(
+                    rx.try_recv(),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                );
+
+                let _: () = publish_conn.publish("regular-phonewave", "banana").await?;
+
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Message,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::BulkString(b"banana".to_vec()),
+                        ]
+                    }
+                );
+
+                let _: () = publish_conn.publish("phonewave-pattern", "banana").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::PMessage,
+                        data: vec![
+                            Value::BulkString(b"phonewave*".to_vec()),
+                            Value::BulkString(b"phonewave-pattern".to_vec()),
+                            Value::BulkString(b"banana".to_vec()),
+                        ]
+                    }
+                );
+
+                let _: () = publish_conn.spublish("sphonewave", "banana").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::SMessage,
+                        data: vec![
+                            Value::BulkString(b"sphonewave".to_vec()),
+                            Value::BulkString(b"banana".to_vec()),
+                        ]
+                    }
+                );
+
+                Ok::<_, RedisError>(())
+            })
+            .unwrap();
+        }
     }
 
     #[cfg(feature = "tls-rustls")]

@@ -82,8 +82,8 @@ use crate::{
         Slot, SlotMap,
     },
     cluster_topology::parse_slots,
-    Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError, RedisFuture, RedisResult,
-    Value,
+    cmd, AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError,
+    RedisFuture, RedisResult, ToRedisArgs, Value,
 };
 
 use futures::{future::BoxFuture, prelude::*, ready};
@@ -191,6 +191,54 @@ where
                 Response::Multiple(values) => values,
                 Response::Single(_) => unreachable!(),
             })
+    }
+
+    /// Subscribes to a new channel.
+    pub async fn subscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
+        let mut cmd = cmd("SUBSCRIBE");
+        cmd.arg(channel_name);
+        cmd.exec_async(self).await?;
+        Ok(())
+    }
+
+    /// Unsubscribes from channel.
+    pub async fn unsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
+        let mut cmd = cmd("UNSUBSCRIBE");
+        cmd.arg(channel_name);
+        cmd.exec_async(self).await?;
+        Ok(())
+    }
+
+    /// Subscribes to a new channel with pattern.
+    pub async fn psubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
+        let mut cmd = cmd("PSUBSCRIBE");
+        cmd.arg(channel_pattern);
+        cmd.exec_async(self).await?;
+        Ok(())
+    }
+
+    /// Unsubscribes from channel pattern.
+    pub async fn punsubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
+        let mut cmd = cmd("PUNSUBSCRIBE");
+        cmd.arg(channel_pattern);
+        cmd.exec_async(self).await?;
+        Ok(())
+    }
+
+    /// Subscribes to a new sharded channel.
+    pub async fn ssubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
+        let mut cmd = cmd("SSUBSCRIBE");
+        cmd.arg(channel_name);
+        cmd.exec_async(self).await?;
+        Ok(())
+    }
+
+    /// Unsubscribes from channel pattern.
+    pub async fn sunsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
+        let mut cmd = cmd("SUNSUBSCRIBE");
+        cmd.arg(channel_name);
+        cmd.exec_async(self).await?;
+        Ok(())
     }
 }
 
@@ -1073,6 +1121,19 @@ where
 /// and obtaining a connection handle.
 pub trait Connect: Sized {
     /// Connect to a node, returning handle for command execution.
+    fn connect_with_config<'a, T>(info: T, config: AsyncConnectionConfig) -> RedisFuture<'a, Self>
+    where
+        T: IntoConnectionInfo + Send + 'a,
+    {
+        // default implementation, for backwards compatibility
+        Self::connect(
+            info,
+            config.response_timeout.unwrap_or(Duration::MAX),
+            config.connection_timeout.unwrap_or(Duration::MAX),
+        )
+    }
+
+    /// Connect to a node, returning handle for command execution.
     fn connect<'a, T>(
         info: T,
         response_timeout: Duration,
@@ -1083,6 +1144,20 @@ pub trait Connect: Sized {
 }
 
 impl Connect for MultiplexedConnection {
+    fn connect_with_config<'a, T>(info: T, config: AsyncConnectionConfig) -> RedisFuture<'a, Self>
+    where
+        T: IntoConnectionInfo + Send + 'a,
+    {
+        async move {
+            let connection_info = info.into_connection_info()?;
+            let client = crate::Client::open(connection_info)?;
+            client
+                .get_multiplexed_async_connection_with_config(&config)
+                .await
+        }
+        .boxed()
+    }
+
     fn connect<'a, T>(
         info: T,
         response_timeout: Duration,
@@ -1130,8 +1205,15 @@ where
     let read_from_replicas = params.read_from_replicas;
     let connection_timeout = params.connection_timeout;
     let response_timeout = params.response_timeout;
+    let push_sender = params.async_push_sender.clone();
     let info = get_connection_info(node, params)?;
-    let mut conn: C = C::connect(info, response_timeout, connection_timeout).await?;
+    let mut config = AsyncConnectionConfig::default()
+        .set_connection_timeout(connection_timeout)
+        .set_response_timeout(response_timeout);
+    if let Some(push_sender) = push_sender {
+        config = config.set_push_sender(push_sender);
+    }
+    let mut conn: C = C::connect_with_config(info, config).await?;
     check_connection(&mut conn).await?;
     if read_from_replicas {
         // If READONLY is sent to primary nodes, it will have no effect
