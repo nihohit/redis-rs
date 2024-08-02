@@ -2561,6 +2561,15 @@ pub struct PushInfo {
     pub data: Vec<Value>,
 }
 
+impl PushInfo {
+    pub(crate) fn disconnect() -> Self {
+        PushInfo {
+            kind: crate::PushKind::Disconnection,
+            data: vec![],
+        }
+    }
+}
+
 #[cfg(feature = "aio")]
 pub(crate) type AsyncPushSender = tokio::sync::mpsc::UnboundedSender<PushInfo>;
 

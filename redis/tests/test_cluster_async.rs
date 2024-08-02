@@ -2367,7 +2367,47 @@ mod cluster_async {
         }
 
         #[test]
-        fn pub_sub_multiple() {
+        fn connection_is_still_usable_if_pubsub_receiver_is_dropped() {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| {
+                builder
+                    .use_protocol(ProtocolVersion::RESP3)
+                    .use_async_push_sender(tx.clone())
+            });
+
+            block_on_all(async move {
+                let mut pubsub_conn = ctx.async_connection().await;
+
+                let _: () = pubsub_conn.subscribe("regular-phonewave").await?;
+                let push = rx.recv().await.unwrap();
+                assert_eq!(
+                    push,
+                    PushInfo {
+                        kind: PushKind::Subscribe,
+                        data: vec![
+                            Value::BulkString(b"regular-phonewave".to_vec()),
+                            Value::Int(1)
+                        ]
+                    }
+                );
+
+                drop(rx);
+
+                assert_eq!(
+                    cmd("PING")
+                        .query_async::<String>(&mut pubsub_conn)
+                        .await
+                        .unwrap(),
+                    "PONG".to_string()
+                );
+
+                Ok::<_, RedisError>(())
+            })
+            .unwrap();
+        }
+
+        #[test]
+        fn multiple_subscribes_and_unsubscribes_work() {
             // In this test we subscribe on all subscription variations to 3 channels in a single call, then unsubscribe from 2 channels.
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| {
@@ -2500,7 +2540,7 @@ mod cluster_async {
         }
 
         #[test]
-        fn push_sender_reconnect_after_disconnect() {
+        fn pub_sub_reconnect_after_disconnect() {
             // in this test we will subscribe to channels, then restart the server, and check that the connection
             // doesn't send disconnect message, but instead resubscribes automatically.
 

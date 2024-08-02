@@ -108,13 +108,7 @@ fn send_push(push_sender: &Option<AsyncPushSender>, info: PushInfo) {
 }
 
 pub(crate) fn send_disconnect(push_sender: &Option<AsyncPushSender>) {
-    send_push(
-        push_sender,
-        PushInfo {
-            kind: crate::PushKind::Disconnection,
-            data: vec![],
-        },
-    );
+    send_push(push_sender, PushInfo::disconnect());
 }
 
 impl<T> PipelineSink<T>

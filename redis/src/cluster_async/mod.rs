@@ -82,8 +82,8 @@ use crate::{
         Slot, SlotMap,
     },
     cluster_topology::parse_slots,
-    cmd, AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError,
-    RedisFuture, RedisResult, ToRedisArgs, Value,
+    cmd, AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, PushInfo,
+    PushKind, RedisError, RedisFuture, RedisResult, ToRedisArgs, Value,
 };
 
 use futures::{future::BoxFuture, prelude::*, ready};
@@ -108,8 +108,14 @@ where
 {
     pub(crate) async fn new(
         initial_nodes: &[ConnectionInfo],
-        cluster_params: ClusterParams,
+        mut cluster_params: ClusterParams,
     ) -> RedisResult<ClusterConnection<C>> {
+        let sender_and_receiver_opt = cluster_params.async_push_sender.as_mut().map(|sender| {
+            let (internal_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let sender = std::mem::replace(sender, internal_sender);
+            (sender, receiver)
+        });
+
         ClusterConnInner::new(initial_nodes, cluster_params)
             .await
             .map(|inner| {
@@ -120,7 +126,30 @@ where
                         .forward(inner)
                         .await;
                 };
-                let _task_handle = new_shared_handle(Runtime::locate().spawn(stream));
+                let future = {
+                    match sender_and_receiver_opt {
+                        Some((sender, mut receiver)) => {
+                            let passthrough_messages = async move {
+                                while let Some(message) = receiver.recv().await {
+                                    // we're ignoring internal disconnect messages.
+                                    if message.kind == PushKind::Disconnection {
+                                        continue;
+                                    }
+                                    if sender.send(message).is_err() {
+                                        return;
+                                    }
+                                }
+                                let _ = sender.send(PushInfo::disconnect());
+                            };
+                            async move {
+                                futures::join!(stream, passthrough_messages);
+                            }
+                            .boxed()
+                        }
+                        None => stream.boxed(),
+                    }
+                };
+                let _task_handle = new_shared_handle(Runtime::locate().spawn(future));
 
                 ClusterConnection {
                     sender,
