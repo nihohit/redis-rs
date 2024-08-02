@@ -81,7 +81,7 @@ impl Runtime {
     }
 
     #[allow(dead_code)]
-    pub(super) fn spawn(&self, f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
+    pub(crate) fn spawn(&self, f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
         match self {
             #[cfg(feature = "tokio-comp")]
             Runtime::Tokio => crate_tokio::Tokio::spawn(f),
