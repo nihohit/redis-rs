@@ -110,6 +110,8 @@ where
         initial_nodes: &[ConnectionInfo],
         mut cluster_params: ClusterParams,
     ) -> RedisResult<ClusterConnection<C>> {
+        // if the user wants to receive messages from a sender, we pass to the internal connections a different sender, so that we could filter
+        // disconnect messages so that they won't reach the user.
         let sender_and_receiver_opt = cluster_params.async_push_sender.as_mut().map(|sender| {
             let (internal_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
             let sender = std::mem::replace(sender, internal_sender);

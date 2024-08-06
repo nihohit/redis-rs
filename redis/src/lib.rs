@@ -603,4 +603,5 @@ mod commands;
 mod connection;
 mod parser;
 mod script;
+mod subscription_tracker;
 mod types;
