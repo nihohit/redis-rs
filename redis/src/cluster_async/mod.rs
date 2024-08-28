@@ -1059,8 +1059,10 @@ where
             // TODO - benchmark whether checking whether the command is a subscription outside of the mutex is more performant.
             let mut tracker = tracker.lock().unwrap();
             match &cmd {
-                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd.clone()),
-                CmdArg::Pipeline { pipeline, .. } => tracker.update_with_pipeline(pipeline.clone()),
+                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd.as_ref()),
+                CmdArg::Pipeline { pipeline, .. } => {
+                    tracker.update_with_pipeline(pipeline.as_ref())
+                }
             }
         };
 
@@ -1235,7 +1237,14 @@ where
 {
     match connect_and_check::<C>(&addr, core.cluster_params.clone()).await {
         Ok(conn) => {
-            let conn_clone = conn.clone();
+            let mut conn_clone = conn.clone();
+            match &core.subscription_tracker {
+                Some(tracker) => {
+                    let pipeline = tracker.lock().unwrap().get_subscription_pipeline();
+                    let _ = pipeline.exec_async(&mut conn_clone).await;
+                }
+                None => {}
+            }
             core.conn_lock
                 .write()
                 .await

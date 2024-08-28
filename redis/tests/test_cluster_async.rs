@@ -2178,7 +2178,7 @@ mod cluster_async {
         .unwrap();
     }
 
-    mod pub_sub {
+    mod pubsub {
         use redis::{PushInfo, PushKind};
         use tokio::join;
 
