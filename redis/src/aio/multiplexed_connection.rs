@@ -40,18 +40,20 @@ enum ResponseAggregate {
         expected_response_count: usize,
         buffer: Vec<Value>,
         first_err: Option<RedisError>,
+        is_transaction: bool,
     },
 }
 
 impl ResponseAggregate {
-    fn new(pipeline_response_counts: Option<(usize, usize)>) -> Self {
+    fn new(pipeline_response_counts: Option<(usize, usize, bool)>) -> Self {
         match pipeline_response_counts {
-            Some((skipped_response_count, expected_response_count)) => {
+            Some((skipped_response_count, expected_response_count, is_transaction)) => {
                 ResponseAggregate::Pipeline {
                     expected_response_count,
                     skipped_response_count,
                     buffer: Vec::new(),
                     first_err: None,
+                    is_transaction,
                 }
             }
             None => ResponseAggregate::SingleCommand,
@@ -69,8 +71,9 @@ struct PipelineMessage {
     input: Vec<u8>,
     output: PipelineOutput,
     // If `None`, this is a single request, not a pipeline of multiple requests.
-    // If `Some`, the first value is the number of responses to skip, and the second is the number of responses to keep.
-    pipeline_response_counts: Option<(usize, usize)>,
+    // If `Some`, the first value is the number of responses to skip,
+    // the second is the number of responses to keep, and the third is whether the pipeline is a transaction.
+    pipeline_response_counts: Option<(usize, usize, bool)>,
 }
 
 /// Wrapper around a `Stream + Sink` where each item sent through the `Sink` results in one or more
@@ -190,12 +193,12 @@ where
                 skipped_response_count,
                 buffer,
                 first_err,
+                is_transaction,
             } => {
                 if *skipped_response_count > 0 {
-                    // errors in skipped values are still counted for errors, since they're errors that will cause the transaction to fail,
+                    // errors in skipped values are still counted for errors in transactions, since they're errors that will cause the transaction to fail,
                     // and we only skip values in transaction.
-                    // TODO - the unified pipeline/transaction flows make this confusing. consider splitting them.
-                    if first_err.is_none() {
+                    if first_err.is_none() && *is_transaction {
                         *first_err = result.and_then(Value::extract_error).err();
                     }
 
@@ -362,8 +365,9 @@ impl Pipeline {
         &mut self,
         input: Vec<u8>,
         // If `None`, this is a single request, not a pipeline of multiple requests.
-        // If `Some`, the first value is the number of responses to skip, and the second is the number of responses to keep.
-        pipeline_response_counts: Option<(usize, usize)>,
+        // If `Some`, the first value is the number of responses to skip,
+        // the second is the number of responses to keep, and the third is whether the pipeline is a transaction.
+        pipeline_response_counts: Option<(usize, usize, bool)>,
         timeout: Option<Duration>,
     ) -> Result<Value, Option<RedisError>> {
         let (sender, receiver) = oneshot::channel();
@@ -549,7 +553,7 @@ impl MultiplexedConnection {
             .pipeline
             .send_recv(
                 cmd.get_packed_pipeline(),
-                Some((offset, count)),
+                Some((offset, count, cmd.is_atomic())),
                 self.response_timeout,
             )
             .await

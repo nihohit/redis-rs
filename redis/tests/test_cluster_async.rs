@@ -2564,9 +2564,12 @@ mod cluster_async {
                     })
                     .collect();
 
+                println!("1");
+
                 let (mut publish_conn, mut pubsub_conn) =
                     join!(ctx.async_connection(), ctx.async_connection());
 
+                println!("2");
                 let _: () = pubsub_conn.subscribe("regular-phonewave").await?;
                 let push = rx.recv().await.unwrap();
                 assert_eq!(
@@ -2579,6 +2582,7 @@ mod cluster_async {
                         ]
                     }
                 );
+                println!("3");
 
                 let _: () = pubsub_conn.psubscribe("phonewave*").await?;
                 let push = rx.recv().await.unwrap();
@@ -2600,6 +2604,7 @@ mod cluster_async {
                     }
                 );
 
+                println!("4");
                 drop(ctx);
 
                 // recreate cluster
@@ -2607,18 +2612,32 @@ mod cluster_async {
                     ports: ports.clone(),
                     ..Default::default()
                 });
-
-                // sleep to allow cluster to reconnect
-                futures_time::task::sleep(futures_time::time::Duration::from_millis(100)).await;
-
+                println!("5");
                 // verify that we didn't get any disconnect notices.
                 assert_eq!(
                     rx.try_recv(),
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                 );
 
+                println!("6");
+
+                // send request to trigger reconnection.
+                let cmd = cmd("PING");
+                let _ = pubsub_conn
+                    .route_command(
+                        &cmd,
+                        RoutingInfo::MultiNode((
+                            MultipleNodeRoutingInfo::AllMasters,
+                            Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),
+                        )),
+                    )
+                    .await?;
+
+                println!("7");
+
                 let _: () = publish_conn.publish("regular-phonewave", "banana").await?;
 
+                println!("8");
                 let push = rx.recv().await.unwrap();
                 assert_eq!(
                     push,
@@ -2630,6 +2649,7 @@ mod cluster_async {
                         ]
                     }
                 );
+                println!("9");
 
                 let _: () = publish_conn.publish("phonewave-pattern", "banana").await?;
                 let push = rx.recv().await.unwrap();
@@ -2644,6 +2664,7 @@ mod cluster_async {
                         ]
                     }
                 );
+                println!("10");
 
                 let _: () = publish_conn.spublish("sphonewave", "banana").await?;
                 let push = rx.recv().await.unwrap();
@@ -2657,6 +2678,8 @@ mod cluster_async {
                         ]
                     }
                 );
+
+                println!("11");
 
                 Ok::<_, RedisError>(())
             })

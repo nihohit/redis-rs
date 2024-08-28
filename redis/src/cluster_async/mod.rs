@@ -82,7 +82,7 @@ use crate::{
         Slot, SlotMap,
     },
     cluster_topology::parse_slots,
-    cmd,
+    cmd, pipe,
     subscription_tracker::SubscriptionTracker,
     AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, PushInfo, PushKind,
     RedisError, RedisFuture, RedisResult, ToRedisArgs, Value,
@@ -367,6 +367,7 @@ where
     ) -> RedisResult<Self> {
         let connections = Self::create_initial_connections(initial_nodes, &cluster_params).await?;
         let subscription_tracker = if cluster_params.async_push_sender.is_some() {
+            println!("create tracker");
             Some(Mutex::new(SubscriptionTracker::default()))
         } else {
             None
@@ -397,7 +398,7 @@ where
                 let params = params.clone();
                 async move {
                     let addr = info.addr.to_string();
-                    let result = connect_and_check(&addr, params).await;
+                    let result = connect_and_check(None, &addr, params).await;
                     match result {
                         Ok(conn) => Some((addr, async { conn }.boxed().shared())),
                         Err(e) => {
@@ -451,6 +452,7 @@ where
     }
 
     fn refresh_connections(&mut self, addrs: Vec<String>) -> impl Future<Output = ()> {
+        println!("refresh connections: {addrs:?}");
         let inner = self.inner.clone();
         async move {
             let mut write_guard = inner.conn_lock.write().await;
@@ -459,6 +461,7 @@ where
                     mem::take(&mut write_guard.0),
                     |mut connections, addr| async {
                         let conn = Self::get_or_create_conn(
+                            inner.clone(),
                             &addr,
                             connections.remove(&addr),
                             &inner.cluster_params,
@@ -476,7 +479,8 @@ where
     }
 
     // Query a node to discover slot-> master mappings.
-    async fn refresh_slots(inner: Arc<InnerCore<C>>) -> RedisResult<()> {
+    async fn refresh_slots(inner: Core<C>) -> RedisResult<()> {
+        println!("refresh slots");
         let mut write_guard = inner.conn_lock.write().await;
         let mut connections = mem::take(&mut write_guard.0);
         let slots = &mut write_guard.1;
@@ -522,8 +526,13 @@ where
             .fold(
                 HashMap::with_capacity(nodes_len),
                 |mut connections, (addr, connection)| async {
-                    let conn =
-                        Self::get_or_create_conn(addr, connection, &inner.cluster_params).await;
+                    let conn = Self::get_or_create_conn(
+                        inner.clone(),
+                        addr,
+                        connection,
+                        &inner.cluster_params,
+                    )
+                    .await;
                     if let Ok(conn) = conn {
                         connections.insert(addr.to_string(), async { conn }.boxed().shared());
                     }
@@ -995,6 +1004,7 @@ where
     }
 
     async fn get_or_create_conn(
+        core: Core<C>,
         addr: &str,
         conn_option: Option<ConnectionFuture<C>>,
         params: &ClusterParams,
@@ -1003,10 +1013,10 @@ where
             let mut conn = conn.await;
             match check_connection(&mut conn).await {
                 Ok(_) => Ok(conn),
-                Err(_) => connect_and_check(addr, params.clone()).await,
+                Err(_) => connect_and_check(Some(&core), addr, params.clone()).await,
             }
         } else {
-            connect_and_check(addr, params.clone()).await
+            connect_and_check(Some(&core), addr, params.clone()).await
         }
     }
 }
@@ -1056,6 +1066,7 @@ where
         let Message { cmd, sender } = msg;
 
         if let Some(tracker) = &self.inner.subscription_tracker {
+            println!("add command");
             // TODO - benchmark whether checking whether the command is a subscription outside of the mutex is more performant.
             let mut tracker = tracker.lock().unwrap();
             match &cmd {
@@ -1235,16 +1246,9 @@ async fn connect_check_and_add<C>(core: Core<C>, addr: String) -> RedisResult<C>
 where
     C: ConnectionLike + Connect + Send + Clone + 'static,
 {
-    match connect_and_check::<C>(&addr, core.cluster_params.clone()).await {
+    match connect_and_check::<C>(Some(&core), &addr, core.cluster_params.clone()).await {
         Ok(conn) => {
-            let mut conn_clone = conn.clone();
-            match &core.subscription_tracker {
-                Some(tracker) => {
-                    let pipeline = tracker.lock().unwrap().get_subscription_pipeline();
-                    let _ = pipeline.exec_async(&mut conn_clone).await;
-                }
-                None => {}
-            }
+            let conn_clone = conn.clone();
             core.conn_lock
                 .write()
                 .await
@@ -1256,10 +1260,15 @@ where
     }
 }
 
-async fn connect_and_check<C>(node: &str, params: ClusterParams) -> RedisResult<C>
+async fn connect_and_check<C>(
+    core: Option<&Core<C>>,
+    node: &str,
+    params: ClusterParams,
+) -> RedisResult<C>
 where
     C: ConnectionLike + Connect + Send + 'static,
 {
+    println!("Connecting to {node}");
     let read_from_replicas = params.read_from_replicas;
     let connection_timeout = params.connection_timeout;
     let response_timeout = params.response_timeout;
@@ -1272,11 +1281,36 @@ where
         config = config.set_push_sender(push_sender);
     }
     let mut conn: C = C::connect_with_config(info, config).await?;
-    check_connection(&mut conn).await?;
+
+    let mut pipeline = if let Some(core) = core {
+        match &core.subscription_tracker {
+            Some(tracker) => {
+                println!("connect and check");
+                tracker.lock().unwrap().get_subscription_pipeline()
+            }
+            None => pipe(),
+        }
+    } else {
+        pipe()
+    };
+
+    pipeline.cmd("PING");
     if read_from_replicas {
         // If READONLY is sent to primary nodes, it will have no effect
-        crate::cmd("READONLY").exec_async(&mut conn).await?;
+        pipeline.cmd("READONLY");
     }
+    // execute all of the requests at once, and check that the last one succeeded,
+    // since we only need one success to know that the connection is valid.
+    println!(
+        "pipeline is {}",
+        String::from_utf8(pipeline.get_packed_pipeline()).unwrap()
+    );
+    let res = conn
+        .req_packed_commands(&pipeline, pipeline.len() - 1, 1)
+        .await;
+    println!("Results: {res:?}");
+    res?;
+    println!("succeeded sending");
     Ok(conn)
 }
 

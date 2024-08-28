@@ -147,6 +147,7 @@ fn choose_response<C>(
         }
         Err((target, err)) => (target, err),
     };
+    println!("REceived err {err:?}");
 
     let has_retries_remaining = request.retry < retry_params.number_of_retries;
 
