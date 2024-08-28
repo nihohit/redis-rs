@@ -82,8 +82,10 @@ use crate::{
         Slot, SlotMap,
     },
     cluster_topology::parse_slots,
-    cmd, AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, PushInfo,
-    PushKind, RedisError, RedisFuture, RedisResult, ToRedisArgs, Value,
+    cmd,
+    subscription_tracker::SubscriptionTracker,
+    AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, PushInfo, PushKind,
+    RedisError, RedisFuture, RedisResult, ToRedisArgs, Value,
 };
 
 use futures::{future::BoxFuture, prelude::*, ready};
@@ -284,6 +286,7 @@ struct InnerCore<C> {
     cluster_params: ClusterParams,
     pending_requests: Mutex<Vec<PendingRequest<C>>>,
     initial_nodes: Vec<ConnectionInfo>,
+    subscription_tracker: Option<Mutex<SubscriptionTracker>>,
 }
 
 type Core<C> = Arc<InnerCore<C>>;
@@ -363,11 +366,17 @@ where
         cluster_params: ClusterParams,
     ) -> RedisResult<Self> {
         let connections = Self::create_initial_connections(initial_nodes, &cluster_params).await?;
+        let subscription_tracker = if cluster_params.async_push_sender.is_some() {
+            Some(Mutex::new(SubscriptionTracker::default()))
+        } else {
+            None
+        };
         let inner = Arc::new(InnerCore {
             conn_lock: RwLock::new((connections, SlotMap::new(cluster_params.read_from_replicas))),
             cluster_params,
             pending_requests: Mutex::new(Vec::new()),
             initial_nodes: initial_nodes.to_vec(),
+            subscription_tracker,
         });
         let connection = ClusterConnInner {
             inner,
@@ -1045,6 +1054,15 @@ where
     fn start_send(self: Pin<&mut Self>, msg: Message<C>) -> Result<(), Self::Error> {
         trace!("start_send");
         let Message { cmd, sender } = msg;
+
+        if let Some(tracker) = &self.inner.subscription_tracker {
+            // TODO - benchmark whether checking whether the command is a subscription outside of the mutex is more performant.
+            let mut tracker = tracker.lock().unwrap();
+            match &cmd {
+                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd.clone()),
+                CmdArg::Pipeline { pipeline, .. } => tracker.update_with_pipeline(pipeline.clone()),
+            }
+        };
 
         self.inner
             .pending_requests
