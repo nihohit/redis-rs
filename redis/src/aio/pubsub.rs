@@ -2,7 +2,11 @@ use crate::aio::Runtime;
 use crate::connection::{
     check_connection_setup, connection_setup_pipeline, AuthResult, ConnectionSetupComponents,
 };
-#[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
+#[cfg(any(
+    feature = "tokio-comp",
+    feature = "async-std-comp",
+    feature = "tokio-uring-comp"
+))]
 use crate::parser::ValueCodec;
 use crate::types::{closed_connection_error, RedisError, RedisResult, Value};
 use crate::{cmd, Msg, RedisConnectionInfo, ToRedisArgs};
@@ -22,7 +26,11 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::UnboundedSender;
-#[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
+#[cfg(any(
+    feature = "tokio-comp",
+    feature = "async-std-comp",
+    feature = "tokio-uring-comp"
+))]
 use tokio_util::codec::Decoder;
 
 use super::SharedHandleContainer;
@@ -370,8 +378,14 @@ impl PubSub {
     where
         C: Unpin + AsyncRead + AsyncWrite + Send + 'static,
     {
-        #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
-        compile_error!("tokio-comp or async-std-comp features required for aio feature");
+        #[cfg(all(
+            not(feature = "tokio-comp"),
+            not(feature = "tokio-uring-comp"),
+            not(feature = "async-std-comp")
+        ))]
+        compile_error!(
+            "tokio-comp, tokio-uring-comp or async-std-comp features required for aio feature"
+        );
 
         let mut codec = ValueCodec::default().framed(stream);
         setup_connection(&mut codec, connection_info).await?;
