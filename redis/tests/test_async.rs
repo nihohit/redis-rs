@@ -125,6 +125,8 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_args(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -151,6 +153,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_can_authenticate_with_username_and_password(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
         block_on_all(
@@ -200,6 +203,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_nice_hash_api(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut connection| async move {
@@ -225,6 +229,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_nice_hash_api_in_pipe(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut connection| async move {
@@ -256,6 +261,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn dont_panic_on_closed_multiplexed_connection(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
         let client = ctx.client.clone();
@@ -304,6 +310,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_pipeline_transaction(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -333,6 +340,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_client_tracking_doesnt_block_execution(#[case] runtime: RuntimeType) {
         //It checks if the library distinguish a push-type message from the others and continues its normal operation.
         test_with_all_connection_types(
@@ -361,6 +369,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_pipeline_transaction_with_errors(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -427,6 +436,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_pipe_over_multiplexed_connection(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -446,6 +456,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_running_multiple_commands(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |con| async move {
@@ -464,6 +475,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_transaction_multiplexed_connection(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |con| async move {
@@ -543,6 +555,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_async_scanning_big_batch(#[case] runtime: RuntimeType) {
         test_async_scanning(1000, runtime)
     }
@@ -550,6 +563,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_async_scanning_small_batch(#[case] runtime: RuntimeType) {
         test_async_scanning(2, runtime)
     }
@@ -557,6 +571,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_response_timeout_multiplexed_connection(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
         block_on_all(
@@ -578,6 +593,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     #[cfg(feature = "script")]
     fn test_script(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
@@ -614,6 +630,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     #[cfg(feature = "script")]
     fn test_script_load(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
@@ -631,6 +648,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     #[cfg(feature = "script")]
     fn test_script_returning_complex_type(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
@@ -655,6 +673,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn io_error_on_kill_issue_320(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
         block_on_all(
@@ -683,6 +702,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn invalid_password_issue_343(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
         block_on_all(
@@ -716,6 +736,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_scan_with_options_works(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -753,6 +774,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_issue_stream_blocks(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -778,6 +800,7 @@ mod basic_async {
     // https://github.com/redis-rs/redis-rs/issues/759
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_issue_async_commands_scan_broken(#[case] runtime: RuntimeType) {
         test_with_all_connection_types(
             |mut con| async move {
@@ -806,6 +829,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pub_sub_subscription(#[case] runtime: RuntimeType) {
             let ctx = TestContext::new();
             block_on_all(
@@ -838,6 +862,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pub_sub_subscription_to_multiple_channels(#[case] runtime: RuntimeType) {
             use redis::RedisError;
 
@@ -867,6 +892,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pub_sub_unsubscription(#[case] runtime: RuntimeType) {
             const SUBSCRIPTION_KEY: &str = "phonewave-pub-sub-unsubscription";
 
@@ -896,6 +922,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn can_receive_messages_while_sending_requests_from_split_pub_sub(
             #[case] runtime: RuntimeType,
         ) {
@@ -927,6 +954,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn can_receive_messages_from_split_pub_sub_after_sink_was_dropped(
             #[case] runtime: RuntimeType,
         ) {
@@ -993,6 +1021,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn cannot_subscribe_on_split_pub_sub_after_stream_was_dropped(
             #[case] runtime: RuntimeType,
         ) {
@@ -1014,6 +1043,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn automatic_unsubscription(#[case] runtime: RuntimeType) {
             const SUBSCRIPTION_KEY: &str = "phonewave-automatic-unsubscription";
 
@@ -1052,6 +1082,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn automatic_unsubscription_on_split(#[case] runtime: RuntimeType) {
             const SUBSCRIPTION_KEY: &str = "phonewave-automatic-unsubscription-on-split";
 
@@ -1104,6 +1135,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pub_sub_conn_reuse(#[case] runtime: RuntimeType) {
             let ctx = TestContext::new();
             block_on_all(
@@ -1133,6 +1165,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pipe_errors_do_not_affect_subsequent_commands(#[case] runtime: RuntimeType) {
             test_with_all_connection_types(
                 |mut conn| async move {
@@ -1157,6 +1190,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn multiplexed_pub_sub_subscribe_on_multiple_channels(#[case] runtime: RuntimeType) {
             let ctx = TestContext::new();
             if ctx.protocol == ProtocolVersion::RESP2 {
@@ -1195,6 +1229,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pub_sub_multiple(#[case] runtime: RuntimeType) {
             use redis::RedisError;
 
@@ -1270,6 +1305,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn pub_sub_requires_resp3(#[case] runtime: RuntimeType) {
             if use_protocol() != ProtocolVersion::RESP2 {
                 return;
@@ -1292,6 +1328,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn push_sender_send_on_disconnect(#[case] runtime: RuntimeType) {
             use redis::RedisError;
 
@@ -1325,6 +1362,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_async_basic_pipe_with_parsing_error(#[case] runtime: RuntimeType) {
         // Tests a specific case involving repeated errors in transactions.
         test_with_all_connection_types(
@@ -1362,6 +1400,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     #[cfg(feature = "connection-manager")]
     fn test_connection_manager_reconnect_after_delay(#[case] runtime: RuntimeType) {
         use redis::ProtocolVersion;
@@ -1413,6 +1452,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     #[cfg(feature = "connection-manager")]
     fn test_multiplexed_connection_kills_connection_on_drop_even_when_blocking(
         #[case] runtime: RuntimeType,
@@ -1468,6 +1508,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn test_should_connect_mtls(#[case] runtime: RuntimeType) {
             let ctx = TestContext::new_with_mtls();
 
@@ -1494,6 +1535,7 @@ mod basic_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
         fn test_should_not_connect_if_tls_active(#[case] runtime: RuntimeType) {
             let ctx = TestContext::new_with_mtls();
 
@@ -1537,6 +1579,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     #[cfg(feature = "connection-manager")]
     fn test_resp3_pushes_connection_manager(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
@@ -1579,6 +1622,7 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_select_db(#[case] runtime: RuntimeType) {
         let ctx = TestContext::new();
         let mut connection_info = ctx.client.get_connection_info().clone();

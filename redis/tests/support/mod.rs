@@ -49,6 +49,8 @@ pub enum RuntimeType {
     Tokio,
     #[cfg(feature = "async-std-comp")]
     AsyncStd,
+    #[cfg(feature = "tokio-uring-comp")]
+    TokioURing,
 }
 
 #[cfg(feature = "aio")]
@@ -89,6 +91,8 @@ where
         RuntimeType::AsyncStd => block_on_all_using_async_std(async move {
             futures::select! {res = f => res, err = check_future => err}
         }),
+        #[cfg(feature = "tokio-uring-comp")]
+        RuntimeType::TokioURing => todo!(),
     };
 
     let _ = panic::take_hook();
@@ -99,10 +103,19 @@ where
     res
 }
 
+#[cfg(feature = "tokio-uring-comp")]
+fn block_on_all_using_tokio_uring<F>(f: F) -> F::Output
+where
+    F: Future,
+{
+    tokio_uring::start(f)
+}
+
 #[cfg(feature = "aio")]
 #[rstest::rstest]
 #[case::tokio(RuntimeType::Tokio)]
 #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+#[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
 #[should_panic]
 fn test_block_on_all_panics_from_spawns(#[case] runtime: RuntimeType) {
     let _ = block_on_all(

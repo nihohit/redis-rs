@@ -59,6 +59,9 @@ rand = { version = "0.8", optional = true }
 async-std = { version = "1.8.0", optional = true }
 async-trait = { version = "0.1.81", optional = true }
 
+# Only needed for tokio_uring support
+tokio-uring = { version = "0.5.0", optional = true }
+
 # Only needed for native tls
 native-tls = { version = "0.2", optional = true }
 tokio-native-tls = { version = "0.3", optional = true }
@@ -69,6 +72,7 @@ rustls = { version = "0.23", optional = true, default-features = false }
 webpki-roots = { version = "0.26", optional = true }
 rustls-native-certs = { version = "0.7", optional = true }
 tokio-rustls = { version = "0.26", optional = true, default-features = false }
+tokio-uring-rustls = { version = "0.3", optional = true, default-features = false }
 futures-rustls = { version = "0.26", optional = true, default-features = false }
 rustls-pemfile = { version = "2", optional = true }
 rustls-pki-types = { version = "1", optional = true }
@@ -108,6 +112,9 @@ async-std-rustls-comp = ["async-std-comp", "futures-rustls", "tls-rustls"]
 tokio-comp = ["aio", "tokio/net"]
 tokio-native-tls-comp = ["tokio-comp", "tls-native-tls", "tokio-native-tls"]
 tokio-rustls-comp = ["tokio-comp", "tls-rustls", "tokio-rustls"]
+tokio-uring-comp = ["aio", "tokio-uring"]
+tokio-uring-native-tls-comp = ["tokio-uring-comp", "tls-native-tls", "tokio-native-tls"]
+tokio-uring-rustls-comp = ["tokio-uring-comp", "tls-rustls", "tokio-uring-rustls"]
 connection-manager = ["futures", "aio", "tokio-retry"]
 streams = []
 cluster-async = ["cluster", "futures", "futures-util", "log"]

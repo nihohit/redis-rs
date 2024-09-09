@@ -13,6 +13,21 @@ test:
 	@RUSTFLAGS="-D warnings" REDISRS_SERVER_TYPE=tcp RUST_BACKTRACE=1 cargo test --locked -p redis --no-default-features -- --nocapture --test-threads=1 --skip test_module
 
 	@echo "===================================================================="
+	@echo "Building tokio-uring without TLS"
+	@echo "===================================================================="
+	@RUSTFLAGS="-D warnings" cargo test --no-run --locked -p redis --features=tokio-uring,cluster-async,sentinel -- --nocapture --test-threads=1 --skip test_module
+
+	@echo "===================================================================="
+	@echo "Building tokio-uring with Rustls"
+	@echo "===================================================================="
+	@RUSTFLAGS="-D warnings" cargo test --no-run --locked -p redis --features=tokio-uring-rustls-comp,cluster-async,sentinel -- --nocapture --test-threads=1 --skip test_module
+
+	@echo "===================================================================="
+	@echo "Building tokio-uring with native-TLS"
+	@echo "===================================================================="
+	@RUSTFLAGS="-D warnings" cargo test --no-run --locked -p redis --features=tokio-uring-native-tls-comp,cluster-async,sentinel -- --nocapture --test-threads=1 --skip test_module
+
+	@echo "===================================================================="
 	@echo "Testing Connection Type TCP with all features and RESP2"
 	@echo "===================================================================="
 	@RUSTFLAGS="-D warnings" REDISRS_SERVER_TYPE=tcp RUST_BACKTRACE=1 cargo test --locked -p redis --all-features -- --nocapture --test-threads=1 --skip test_module

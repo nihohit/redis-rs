@@ -330,6 +330,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_connect_to_random_replica_async(#[case] runtime: RuntimeType) {
         let master_name = "master1";
         let mut context = TestSentinelContext::new(2, 3, 3);
@@ -366,6 +367,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_connect_to_multiple_replicas_async(#[case] runtime: RuntimeType) {
         let number_of_replicas = 3;
         let master_name = "master1";
@@ -411,6 +413,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_server_down_async(#[case] runtime: RuntimeType) {
         let number_of_replicas = 3;
         let master_name = "master1";
@@ -462,6 +465,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_client_async(#[case] runtime: RuntimeType) {
         let master_name = "master1";
         let mut context = TestSentinelContext::new(2, 3, 3);
@@ -514,6 +518,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_client_async_with_connection_timeout(#[case] runtime: RuntimeType) {
         let master_name = "master1";
         let mut context = TestSentinelContext::new(2, 3, 3);
@@ -573,6 +578,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_client_async_with_response_timeout(#[case] runtime: RuntimeType) {
         let master_name = "master1";
         let mut context = TestSentinelContext::new(2, 3, 3);
@@ -632,6 +638,7 @@ pub mod async_tests {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "tokio-uring-comp", case::async_std(RuntimeType::TokioURing))]
     fn test_sentinel_client_async_with_timeouts(#[case] runtime: RuntimeType) {
         let master_name = "master1";
         let mut context = TestSentinelContext::new(2, 3, 3);
