@@ -199,11 +199,7 @@ impl AsyncConnectionConfig {
 #[cfg_attr(docsrs, doc(cfg(feature = "aio")))]
 impl Client {
     /// Returns an async connection from the client.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     #[deprecated(
         note = "aio::Connection is deprecated. Use client::get_multiplexed_async_connection instead."
     )]
@@ -258,11 +254,7 @@ impl Client {
     }
 
     /// Returns an async connection from the client.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     #[cfg_attr(
         docsrs,
         doc(cfg(any(feature = "tokio-comp", feature = "async-std-comp")))
@@ -275,11 +267,7 @@ impl Client {
     }
 
     /// Returns an async connection from the client.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     #[cfg_attr(
         docsrs,
         doc(cfg(any(feature = "tokio-comp", feature = "async-std-comp")))
@@ -299,11 +287,7 @@ impl Client {
     }
 
     /// Returns an async connection from the client.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     #[cfg_attr(
         docsrs,
         doc(cfg(any(feature = "tokio-comp", feature = "async-std-comp")))
@@ -792,11 +776,7 @@ impl Client {
     }
 
     /// Returns an async receiver for pub-sub messages.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     // TODO - do we want to type-erase pubsub using a trait, to allow us to replace it with a different implementation later?
     pub async fn get_async_pubsub(&self) -> RedisResult<crate::aio::PubSub> {
         let connection = match Runtime::locate() {
@@ -817,11 +797,7 @@ impl Client {
     }
 
     /// Returns an async receiver for monitor messages.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     // TODO - do we want to type-erase monitor using a trait, to allow us to replace it with a different implementation later?
     pub async fn get_async_monitor(&self) -> RedisResult<crate::aio::Monitor> {
         #[allow(deprecated)]

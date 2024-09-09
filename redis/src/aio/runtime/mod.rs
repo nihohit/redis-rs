@@ -13,8 +13,6 @@ use crate::types::RedisError;
 pub(crate) enum Runtime {
     #[cfg(feature = "tokio-comp")]
     Tokio,
-    #[cfg(feature = "tokio-uring-comp")]
-    TokioUring,
     #[cfg(feature = "async-std-comp")]
     AsyncStd,
 }
@@ -62,17 +60,28 @@ impl SharedHandleContainer {
 
 impl Runtime {
     pub(crate) fn locate() -> Self {
-        #[cfg(any(
-            feature = "tokio-comp",
-            feature = "tokio-uring-comp",
-            feature = "async-std-comp"
-        ))]
+        #[cfg(all(feature = "tokio-comp", not(feature = "async-std-comp")))]
+        {
+            Runtime::Tokio
+        }
+
+        #[cfg(all(not(feature = "tokio-comp"), feature = "async-std-comp"))]
+        {
+            Runtime::AsyncStd
+        }
+
+        #[cfg(all(feature = "tokio-comp", feature = "async-std-comp"))]
         {
             if ::tokio::runtime::Handle::try_current().is_ok() {
                 Runtime::Tokio
             } else {
                 Runtime::AsyncStd
             }
+        }
+
+        #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
+        {
+            compile_error!("tokio-comp or async-std-comp features required for aio feature")
         }
     }
 
@@ -100,7 +109,6 @@ impl Runtime {
             Runtime::AsyncStd => ::async_std::future::timeout(duration, future)
                 .await
                 .map_err(|_| Elapsed(())),
-                #[cfg(feature = "tokio-uring-comp")]
         }
     }
 }

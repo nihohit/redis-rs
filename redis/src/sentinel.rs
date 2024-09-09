@@ -788,11 +788,7 @@ impl SentinelClient {
 
     /// Returns an async connection from the client, using the same logic from
     /// `SentinelClient::get_connection`.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     pub async fn get_async_connection(&mut self) -> RedisResult<AsyncConnection> {
         self.get_async_connection_with_config(&AsyncConnectionConfig::new())
             .await
@@ -800,11 +796,7 @@ impl SentinelClient {
 
     /// Returns an async connection from the client with options, using the same logic from
     /// `SentinelClient::get_connection`.
-    #[cfg(any(
-        feature = "tokio-comp",
-        feature = "async-std-comp",
-        feature = "tokio-uring-comp"
-    ))]
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     pub async fn get_async_connection_with_config(
         &mut self,
         config: &AsyncConnectionConfig,

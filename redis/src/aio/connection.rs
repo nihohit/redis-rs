@@ -9,14 +9,14 @@ use crate::connection::{
     resp2_is_pub_sub_state_cleared, resp3_is_pub_sub_state_cleared, ConnectionAddr, ConnectionInfo,
     Msg, RedisConnectionInfo,
 };
-#[cfg(feature = "aio")]
+#[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
 use crate::parser::ValueCodec;
 use crate::types::{ErrorKind, FromRedisValue, RedisError, RedisFuture, RedisResult, Value};
 use crate::{from_owned_redis_value, ProtocolVersion, ToRedisArgs};
-#[cfg(feature = "async-std-comp")]
+#[cfg(all(not(feature = "tokio-comp"), feature = "async-std-comp"))]
 use ::async_std::net::ToSocketAddrs;
 use ::tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-#[cfg(any(feature = "tokio-comp", feature = "tokio-uring-comp"))]
+#[cfg(feature = "tokio-comp")]
 use ::tokio::net::lookup_host;
 use combine::{parser::combinator::AnySendSyncPartialState, stream::PointerOffset};
 use futures_util::future::select_ok;
@@ -26,7 +26,7 @@ use futures_util::{
 };
 use std::net::SocketAddr;
 use std::pin::Pin;
-#[cfg(feature = "aio")]
+#[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
 use tokio_util::codec::Decoder;
 
 /// Represents a stateful redis TCP connection.
@@ -433,13 +433,9 @@ async fn get_socket_addrs(
     host: &str,
     port: u16,
 ) -> RedisResult<impl Iterator<Item = SocketAddr> + Send + '_> {
-    #[cfg(any(feature = "tokio-comp", feature = "tokio-uring-comp"))]
+    #[cfg(feature = "tokio-comp")]
     let socket_addrs = lookup_host((host, port)).await?;
-    #[cfg(all(
-        not(feature = "tokio-comp"),
-        not(feature = "tokio-uring-comp"),
-        feature = "async-std-comp"
-    ))]
+    #[cfg(all(not(feature = "tokio-comp"), feature = "async-std-comp"))]
     let socket_addrs = (host, port).to_socket_addrs().await?;
 
     let mut socket_addrs = socket_addrs.peekable();
