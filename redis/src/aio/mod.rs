@@ -13,10 +13,14 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::pin::Pin;
 
+mod runtime;
+
 /// Enables the async_std compatibility
 #[cfg(feature = "async-std-comp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async-std-comp")))]
-pub mod async_std;
+pub mod async_std {
+    pub use super::runtime::async_std::{AsyncStd, AsyncStdWrapped};
+}
 
 #[cfg(feature = "tls-rustls")]
 use crate::tls::TlsConnParams;
@@ -27,7 +31,9 @@ use crate::connection::TlsConnParams;
 /// Enables the tokio compatibility
 #[cfg(feature = "tokio-comp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio-comp")))]
-pub mod tokio;
+pub mod tokio {
+    pub(crate) use super::runtime::tokio::Tokio;
+}
 
 mod pubsub;
 pub use pubsub::PubSub;
@@ -126,7 +132,6 @@ mod connection_manager;
 #[cfg(feature = "connection-manager")]
 #[cfg_attr(docsrs, doc(cfg(feature = "connection-manager")))]
 pub use connection_manager::*;
-mod runtime;
 pub(super) use runtime::*;
 
 macro_rules! check_resp3 {

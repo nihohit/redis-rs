@@ -1,4 +1,4 @@
-use super::{AsyncStream, RedisResult, RedisRuntime, SocketAddr, TaskHandle};
+use crate::aio::{AsyncStream, RedisResult, RedisRuntime, SocketAddr, TaskHandle};
 use async_trait::async_trait;
 use std::{
     future::Future,
@@ -33,7 +33,7 @@ use crate::tls::TlsConnParams;
 use crate::connection::TlsConnParams;
 
 #[cfg(unix)]
-use super::Path;
+use crate::aio::Path;
 
 #[inline(always)]
 async fn connect_tcp(addr: &SocketAddr) -> io::Result<TcpStreamTokio> {
@@ -173,14 +173,8 @@ impl RedisRuntime for Tokio {
         Ok(UnixStreamTokio::connect(path).await.map(Tokio::Unix)?)
     }
 
-    #[cfg(feature = "tokio-comp")]
     fn spawn(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
         TaskHandle::Tokio(tokio::spawn(f))
-    }
-
-    #[cfg(not(feature = "tokio-comp"))]
-    fn spawn(_: impl Future<Output = ()> + Send + 'static) -> TokioTaskHandle {
-        unreachable!()
     }
 
     fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
