@@ -112,7 +112,6 @@ impl Runtime {
             Runtime::AsyncStd => ::async_std::future::timeout(duration, future)
                 .await
                 .map_err(|_| Elapsed(())),
-                #[cfg(feature = "tokio-uring-comp")]
         }
     }
 }

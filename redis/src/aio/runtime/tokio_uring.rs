@@ -1,12 +1,39 @@
+use crate::aio::{AsyncStream, RedisResult, RedisRuntime, SocketAddr, TaskHandle};
+use std::{
+    future::Future,
+    io,
+    pin::Pin,
+    task::{self, Poll},
+};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio_uring::net::TcpStream;
 #[cfg(unix)]
 use tokio_uring::net::UnixStream;
-use tokio_uring::{
-    io::{AsyncRead, AsyncWrite, ReadBuf},
-    net::TcpStream,
-};
+
+#[cfg(all(feature = "tls-native-tls", not(feature = "tls-rustls")))]
+use native_tls::TlsConnector;
+
+#[cfg(feature = "tls-rustls")]
+use crate::connection::create_rustls_config;
+#[cfg(feature = "tls-rustls")]
+use std::sync::Arc;
+#[cfg(feature = "tls-rustls")]
+use tokio_uring_rustls::{TlsConnector, TlsStream};
+
+#[cfg(all(feature = "tokio-native-tls-comp", not(feature = "tokio-rustls-comp")))]
+use tokio_native_tls::TlsStream;
+
+#[cfg(feature = "tokio-rustls-comp")]
+use crate::tls::TlsConnParams;
+
+#[cfg(all(feature = "tokio-native-tls-comp", not(feature = "tls-rustls")))]
+use crate::connection::TlsConnParams;
+
+#[cfg(unix)]
+use crate::aio::Path;
 
 async fn connect_tcp(addr: &SocketAddr) -> io::Result<TcpStream> {
-    let socket = TcpStream::connect(addr).await?;
+    let socket = TcpStream::connect(*addr).await?;
     #[cfg(feature = "tcp_nodelay")]
     socket.set_nodelay(true)?;
     #[cfg(feature = "keep-alive")]
@@ -26,7 +53,7 @@ async fn connect_tcp(addr: &SocketAddr) -> io::Result<TcpStream> {
     }
 }
 
-pub(crate) enum TokioUring {
+pub enum TokioUring {
     /// Represents a tokio-uring TCP connection.
     Tcp(TcpStream),
     /// Represents a tokio-uring TLS encrypted TCP connection
