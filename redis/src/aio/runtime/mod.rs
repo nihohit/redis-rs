@@ -7,6 +7,8 @@ use futures_util::Future;
 pub(crate) mod async_std;
 #[cfg(feature = "tokio-comp")]
 pub(crate) mod tokio;
+#[cfg(feature = "tokio-uring-comp")]
+pub(crate) mod tokio_uring;
 use crate::types::RedisError;
 
 #[derive(Clone, Debug)]
@@ -22,6 +24,8 @@ pub(crate) enum Runtime {
 pub(crate) enum TaskHandle {
     #[cfg(feature = "tokio-comp")]
     Tokio(::tokio::task::JoinHandle<()>),
+    #[cfg(feature = "tokio-uring-comp")]
+    TokioUring(::tokio::task::JoinHandle<()>),
     #[cfg(feature = "async-std-comp")]
     AsyncStd(::async_std::task::JoinHandle<()>),
 }
@@ -40,6 +44,8 @@ impl Drop for HandleContainer {
             None => {}
             #[cfg(feature = "tokio-comp")]
             Some(TaskHandle::Tokio(handle)) => handle.abort(),
+            #[cfg(feature = "tokio-uring-comp")]
+            Some(TaskHandle::TokioUring(handle)) => handle.abort(),
             #[cfg(feature = "async-std-comp")]
             Some(TaskHandle::AsyncStd(handle)) => {
                 // schedule for cancellation without waiting for result.
@@ -81,6 +87,8 @@ impl Runtime {
         match self {
             #[cfg(feature = "tokio-comp")]
             Runtime::Tokio => tokio::Tokio::spawn(f),
+            #[cfg(feature = "tokio-uring-comp")]
+            Runtime::TokioUring => tokio::Tokio::spawn(f),
             #[cfg(feature = "async-std-comp")]
             Runtime::AsyncStd => async_std::AsyncStd::spawn(f),
         }
@@ -94,6 +102,10 @@ impl Runtime {
         match self {
             #[cfg(feature = "tokio-comp")]
             Runtime::Tokio => ::tokio::time::timeout(duration, future)
+                .await
+                .map_err(|_| Elapsed(())),
+            #[cfg(feature = "tokio-uring-comp")]
+            Runtime::TokioUring => ::tokio::time::timeout(duration, future)
                 .await
                 .map_err(|_| Elapsed(())),
             #[cfg(feature = "async-std-comp")]

@@ -22,6 +22,13 @@ pub mod async_std {
     pub use super::runtime::async_std::{AsyncStd, AsyncStdWrapped};
 }
 
+/// Enables the tokio_uring compatibility
+#[cfg(feature = "async-std-comp")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async-std-comp")))]
+pub mod tokio_uring {
+    pub use super::runtime::tokio_uring::TokioUring;
+}
+
 #[cfg(feature = "tls-rustls")]
 use crate::tls::TlsConnParams;
 

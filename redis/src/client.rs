@@ -811,6 +811,12 @@ impl Client {
                 self.get_simple_async_connection::<crate::aio::async_std::AsyncStd>()
                     .await?
             }
+
+            #[cfg(feature = "tokio-uring-comp")]
+            Runtime::AsyncStd => {
+                self.get_simple_async_connection::<crate::aio::tokio_uring::TokioUring>()
+                    .await?
+            }
         };
 
         crate::aio::PubSub::new(&self.connection_info.redis, connection).await
