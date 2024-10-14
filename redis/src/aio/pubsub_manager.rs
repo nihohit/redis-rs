@@ -7,6 +7,16 @@ use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
+/// The sink part of a split async managed Pubsub.
+///
+/// The sink is used to subscribe and unsubscribe from
+/// channels.
+/// The stream part is independent from the sink,
+/// and dropping the sink doesn't cause the stream part to
+/// stop working, nor will the managed stream stop reconnecting
+/// and resubscribing.
+/// The sink isn't independent from the stream - dropping
+/// the stream will cause the sink to return errors on requests.
 pub struct PubSubManagerSink(PubSubSink);
 
 impl Clone for PubSubManagerSink {
@@ -16,12 +26,25 @@ impl Clone for PubSubManagerSink {
 }
 
 pin_project! {
+    /// The stream part of a split managed async Pubsub.
+    ///
+    /// The stream is used to receive messages from the server.
+    /// The stream part is independent from the sink,
+    /// and dropping the sink doesn't cause the stream part to
+    /// stop working, nor will the managed stream stop reconnecting
+    /// and resubscribing.
+    /// The sink isn't independent from the stream - dropping
+    /// the stream will cause the sink to return errors on requests.
     pub struct PubSubManagerStream{
         #[pin]
         stream:PubSubStream}
 }
 
-/// A connection dedicated to pubsub messages.
+/// A managed connection dedicated to pubsub messages.
+///
+/// If the pubsub disconnects from the server, it will
+/// automatically attempt to reconnect and resubscribe to
+/// all channels.
 pub struct PubSubManager {
     sink: PubSubManagerSink,
     stream: PubSubManagerStream,

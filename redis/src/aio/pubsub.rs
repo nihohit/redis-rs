@@ -52,8 +52,7 @@ pub struct PubSubSink {
 pin_project! {
     /// The stream part of a split async Pubsub.
     ///
-    /// The sink is used to subscribe and unsubscribe from
-    /// channels.
+    /// The stream is used to receive messages from the server.
     /// The stream part is independent from the sink,
     /// and dropping the sink doesn't cause the stream part to
     /// stop working.
@@ -397,7 +396,7 @@ where
 }
 
 impl PubSub {
-    /// Constructs a new `MultiplexedConnection` out of a `AsyncRead + AsyncWrite` object
+    /// Constructs a new `PubSub` out of a `AsyncRead + AsyncWrite` object
     /// and a `ConnectionInfo`
     pub async fn new<C>(connection_info: &RedisConnectionInfo, stream: C) -> RedisResult<Self>
     where
