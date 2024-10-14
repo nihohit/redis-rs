@@ -796,6 +796,27 @@ impl Client {
         crate::aio::PubSub::new(&self.connection_info.redis, connection).await
     }
 
+    /// Returns an async receiver for pub-sub messages.
+    #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
+    // TODO - do we want to type-erase pubsub using a trait, to allow us to replace it with a different implementation later?
+    pub async fn get_async_pubsub_manager(&self) -> RedisResult<crate::aio::PubSubManager> {
+        let connection = match Runtime::locate() {
+            #[cfg(feature = "tokio-comp")]
+            Runtime::Tokio => {
+                self.get_simple_async_connection::<crate::aio::tokio::Tokio>()
+                    .await?
+            }
+
+            #[cfg(feature = "async-std-comp")]
+            Runtime::AsyncStd => {
+                self.get_simple_async_connection::<crate::aio::async_std::AsyncStd>()
+                    .await?
+            }
+        };
+
+        crate::aio::PubSubManager::new(&self.connection_info.redis, connection).await
+    }
+
     /// Returns an async receiver for monitor messages.
     #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
     // TODO - do we want to type-erase monitor using a trait, to allow us to replace it with a different implementation later?

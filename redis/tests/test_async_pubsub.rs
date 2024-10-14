@@ -519,4 +519,66 @@ mod async_pubsub {
             pubsub_type,
         );
     }
+
+    #[rstest]
+    #[case::tokio(RuntimeType::Tokio)]
+    #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    fn manager_should_reconnect_after_disconnect(#[case] runtime: RuntimeType) {
+        let ctx = TestContext::new();
+        block_on_all(
+            async move {
+                let mut pubsub_conn = ctx.client.get_async_pubsub_manager().await?;
+                let _: () = pubsub_conn.subscribe(&["phonewave", "foo", "bar"]).await?;
+                let mut pubsub_stream = pubsub_conn.on_message();
+
+                let addr = ctx.server.client_addr().clone();
+                drop(ctx);
+                let ctx = TestContext::new_with_addr(addr);
+                let mut publish_conn = ctx.async_connection().await?;
+                let _: () = publish_conn.publish("phonewave", "banana").await?;
+
+                let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload()?;
+                assert_eq!("banana".to_string(), msg_payload);
+
+                let _: () = publish_conn.publish("foo", "foobar").await?;
+                let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload()?;
+                assert_eq!("foobar".to_string(), msg_payload);
+
+                Ok::<_, RedisError>(())
+            },
+            runtime,
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    #[case::tokio(RuntimeType::Tokio)]
+    #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    fn split_manager_should_reconnect_after_disconnect(#[case] runtime: RuntimeType) {
+        let ctx = TestContext::new();
+        block_on_all(
+            async move {
+                let (mut sink, mut pubsub_stream) =
+                    ctx.client.get_async_pubsub_manager().await?.split();
+                let _: () = sink.subscribe(&["phonewave", "foo", "bar"]).await?;
+
+                let addr = ctx.server.client_addr().clone();
+                drop(ctx);
+                let ctx = TestContext::new_with_addr(addr);
+                let mut publish_conn = ctx.async_connection().await?;
+                let _: () = publish_conn.publish("phonewave", "banana").await?;
+
+                let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload()?;
+                assert_eq!("banana".to_string(), msg_payload);
+
+                let _: () = publish_conn.publish("foo", "foobar").await?;
+                let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload()?;
+                assert_eq!("foobar".to_string(), msg_payload);
+
+                Ok::<_, RedisError>(())
+            },
+            runtime,
+        )
+        .unwrap();
+    }
 }
