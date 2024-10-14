@@ -1,11 +1,15 @@
-use super::{PubSub, PubSubSink, PubSubStream};
-use crate::types::RedisResult;
-use crate::{Msg, RedisConnectionInfo, ToRedisArgs};
+use super::{PubSub, SharedHandleContainer};
+use crate::types::{closed_connection_error, RedisResult};
+use crate::{Cmd, Msg, RedisConnectionInfo, ToRedisArgs};
 use ::tokio::io::{AsyncRead, AsyncWrite};
+use futures::channel::mpsc::UnboundedSender;
+use futures::channel::oneshot;
+use futures::SinkExt;
 use futures_util::stream::Stream;
 use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{self, Poll};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 /// The sink part of a split async managed Pubsub.
 ///
@@ -17,7 +21,7 @@ use std::task::{self, Poll};
 /// and resubscribing.
 /// The sink isn't independent from the stream - dropping
 /// the stream will cause the sink to return errors on requests.
-pub struct PubSubManagerSink(PubSubSink);
+pub struct PubSubManagerSink(UnboundedSender<SinkRequest>);
 
 impl Clone for PubSubManagerSink {
     fn clone(&self) -> Self {
@@ -37,7 +41,10 @@ pin_project! {
     /// the stream will cause the sink to return errors on requests.
     pub struct PubSubManagerStream{
         #[pin]
-        stream:PubSubStream}
+        stream: UnboundedReceiver<Msg>,
+        // This handle ensures that once the stream will be dropped, the underlying task will stop.
+        _task_handle: Option<SharedHandleContainer>,
+    }
 }
 
 /// A managed connection dedicated to pubsub messages.
@@ -112,25 +119,61 @@ impl PubSubManager {
     }
 }
 
+enum SinkRequestType {
+    Subscribe,
+    Unsubscribe,
+    PSubscribe,
+    PUnsubscribe,
+}
+
+struct SinkRequest {
+    request_type: SinkRequestType,
+    arguments: Vec<Vec<u8>>,
+    response: oneshot::Sender<RedisResult<()>>,
+}
+
 impl PubSubManagerSink {
+    async fn send_request(
+        &mut self,
+        request_type: SinkRequestType,
+        arguments: Vec<Vec<u8>>,
+    ) -> RedisResult<()> {
+        let (sender, receiver) = oneshot::channel();
+        self.0.send(SinkRequest {
+            request_type,
+            arguments,
+            response: sender,
+        });
+        receiver
+            .await
+            .unwrap_or_else(|_| Err(closed_connection_error()))
+    }
+
     /// Subscribes to a new channel.
     pub async fn subscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
-        self.0.subscribe(channel_name).await
+        self.send_request(SinkRequestType::Subscribe, channel_name.to_redis_args())
+            .await
     }
 
     /// Unsubscribes from channel.
     pub async fn unsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
-        self.0.unsubscribe(channel_name).await
+        self.send_request(SinkRequestType::Unsubscribe, channel_name.to_redis_args())
+            .await
     }
 
     /// Subscribes to a new channel with pattern.
     pub async fn psubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
-        self.0.psubscribe(channel_pattern).await
+        self.send_request(SinkRequestType::PSubscribe, channel_pattern.to_redis_args())
+            .await
     }
 
     /// Unsubscribes from channel pattern.
     pub async fn punsubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
-        self.0.punsubscribe(channel_pattern).await
+        self.send_request(
+            SinkRequestType::PUnsubscribe,
+            channel_pattern.to_redis_args(),
+        )
+        .await
     }
 }
 
@@ -138,6 +181,6 @@ impl Stream for PubSubManagerStream {
     type Item = Msg;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        self.project().stream.poll_next(cx)
+        self.project().stream.poll_recv(cx)
     }
 }
