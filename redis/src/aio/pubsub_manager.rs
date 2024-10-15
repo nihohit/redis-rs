@@ -4,10 +4,10 @@ use crate::types::{closed_connection_error, RedisResult};
 use crate::{Client, ConnectionInfo, Msg, RedisError, ToRedisArgs};
 use ::tokio::sync::mpsc::UnboundedSender;
 use futures_util::stream::{Stream, StreamExt};
+use futures_util::FutureExt;
 use pin_project_lite::pin_project;
-use std::pin::Pin;
+use std::pin::{pin, Pin};
 use std::task::{self, Poll};
-use tokio::join;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::sync::oneshot;
 
@@ -140,14 +140,27 @@ async fn start_listening(
 
     loop {
         // TODO - remove unwrap, retry and handle failure
+        println!("connecting");
         let (sink, stream) = client.get_async_pubsub().await.unwrap().split();
         if let Some(sender) = ready_sender.take() {
+            println!("setup completed");
             let _ = sender.send(());
         }
-        join!(
-            stream_handler(&mut stream_sender, stream),
-            sink_handler(&mut sink_receiver, sink),
-        );
+        println!("connected");
+
+        // We don't want the sink future's completion to kill the connection,
+        // because the stream might be used after the sink is dropped
+        let sink_future =
+            pin!(sink_handler(&mut sink_receiver, sink).then(|_| std::future::pending()));
+        let mut stream_future = pin!(stream_handler(&mut stream_sender, stream));
+        tokio::select! {
+            _ = sink_future => {}
+            _ = &mut stream_future => {
+                continue;
+            }
+        }
+        println!("both dropped");
+        stream_future.await;
     }
 }
 
@@ -168,9 +181,11 @@ async fn sink_handler(
         }
         let _ = request.response.send(response);
         if should_close {
+            println!("should close sink");
             return;
         }
     }
+    println!("closing sink");
 }
 
 async fn stream_handler(
@@ -182,6 +197,7 @@ async fn stream_handler(
             return;
         }
     }
+    println!("stream completed");
 }
 
 enum SinkRequestType {
