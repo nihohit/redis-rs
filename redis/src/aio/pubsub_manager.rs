@@ -9,7 +9,7 @@ use futures_util::stream::Stream;
 use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{self, Poll};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
 /// The sink part of a split async managed Pubsub.
 ///
@@ -67,10 +67,21 @@ impl PubSubManager {
         #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
         compile_error!("tokio-comp or async-std-comp features required for aio feature");
 
-        let (sink, stream) = PubSub::new(connection_info, stream).await?.split();
+        let (sink_sender, sink_receiver) = unbounded_channel();
+        let (stream_sender, stream_receiver) = unbounded_channel();
+        let (setup_complete_sender, setup_complete_receiver) = oneshot::channel();
+        let _task_handle = Runtime::locate().spawn(start_listening(
+            sink_receiver,
+            stream_sender,
+            setup_complete_sender,
+        ));
+        setup_complete_receiver?;
         Ok(Self {
-            stream: PubSubManagerStream { stream },
-            sink: PubSubManagerSink(sink),
+            stream: PubSubManagerStream {
+                stream: stream_receiver,
+                _task_handle,
+            },
+            sink: PubSubManagerSink(sink_sender),
         })
     }
 
@@ -117,6 +128,14 @@ impl PubSubManager {
     pub fn split(self) -> (PubSubManagerSink, PubSubManagerStream) {
         (self.sink, self.stream)
     }
+}
+
+async fn start_listening(
+    sink_receiver: UnboundedReceiver<_>,
+    stream_sender: tokio::sync::mpsc::UnboundedSender<Msg>,
+    setup_completed_sender: oneshot::Sender<RedisResult<()>>,
+) -> Option<SharedHandleContainer> {
+    loop {}
 }
 
 enum SinkRequestType {
