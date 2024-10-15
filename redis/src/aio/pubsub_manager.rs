@@ -1,15 +1,15 @@
-use super::{PubSub, SharedHandleContainer};
+use super::SharedHandleContainer;
+use crate::aio::Runtime;
 use crate::types::{closed_connection_error, RedisResult};
-use crate::{Cmd, Msg, RedisConnectionInfo, ToRedisArgs};
-use ::tokio::io::{AsyncRead, AsyncWrite};
-use futures::channel::mpsc::UnboundedSender;
-use futures::channel::oneshot;
-use futures::SinkExt;
-use futures_util::stream::Stream;
+use crate::{Client, ConnectionInfo, Msg, RedisError, ToRedisArgs};
+use ::tokio::sync::mpsc::UnboundedSender;
+use futures_util::stream::{Stream, StreamExt};
 use pin_project_lite::pin_project;
 use std::pin::Pin;
 use std::task::{self, Poll};
+use tokio::join;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::oneshot;
 
 /// The sink part of a split async managed Pubsub.
 ///
@@ -58,28 +58,28 @@ pub struct PubSubManager {
 }
 
 impl PubSubManager {
-    /// Constructs a new `MultiplexedConnection` out of a `AsyncRead + AsyncWrite` object
-    /// and a `ConnectionInfo`
-    pub async fn new<C>(connection_info: &RedisConnectionInfo, stream: C) -> RedisResult<Self>
-    where
-        C: Unpin + AsyncRead + AsyncWrite + Send + 'static,
-    {
+    /// Constructs a new `PubSubManager`.
+    pub async fn new(connection_info: &ConnectionInfo) -> RedisResult<Self> {
         #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
         compile_error!("tokio-comp or async-std-comp features required for aio feature");
 
         let (sink_sender, sink_receiver) = unbounded_channel();
         let (stream_sender, stream_receiver) = unbounded_channel();
         let (setup_complete_sender, setup_complete_receiver) = oneshot::channel();
-        let _task_handle = Runtime::locate().spawn(start_listening(
+        let client = Client::open(connection_info.clone())?;
+        let task_handle = Runtime::locate().spawn(start_listening(
             sink_receiver,
             stream_sender,
+            client,
             setup_complete_sender,
         ));
-        setup_complete_receiver?;
+        setup_complete_receiver.await.map_err(|_| {
+            RedisError::from((crate::ErrorKind::ClientError, "Failed to create pubsub"))
+        })?;
         Ok(Self {
             stream: PubSubManagerStream {
                 stream: stream_receiver,
-                _task_handle,
+                _task_handle: Some(SharedHandleContainer::new(task_handle)),
             },
             sink: PubSubManagerSink(sink_sender),
         })
@@ -131,11 +131,57 @@ impl PubSubManager {
 }
 
 async fn start_listening(
-    sink_receiver: UnboundedReceiver<_>,
-    stream_sender: tokio::sync::mpsc::UnboundedSender<Msg>,
-    setup_completed_sender: oneshot::Sender<RedisResult<()>>,
-) -> Option<SharedHandleContainer> {
-    loop {}
+    mut sink_receiver: UnboundedReceiver<SinkRequest>,
+    mut stream_sender: tokio::sync::mpsc::UnboundedSender<Msg>,
+    client: Client,
+    ready_sender: oneshot::Sender<()>,
+) {
+    let mut ready_sender = Some(ready_sender);
+
+    loop {
+        // TODO - remove unwrap, retry and handle failure
+        let (sink, stream) = client.get_async_pubsub().await.unwrap().split();
+        if let Some(sender) = ready_sender.take() {
+            let _ = sender.send(());
+        }
+        join!(
+            stream_handler(&mut stream_sender, stream),
+            sink_handler(&mut sink_receiver, sink),
+        );
+    }
+}
+
+async fn sink_handler(
+    sink_receiver: &mut UnboundedReceiver<SinkRequest>,
+    mut sink: super::PubSubSink,
+) {
+    while let Some(request) = sink_receiver.recv().await {
+        let response = match request.request_type {
+            SinkRequestType::Subscribe => sink.subscribe(request.arguments).await,
+            SinkRequestType::Unsubscribe => sink.unsubscribe(request.arguments).await,
+            SinkRequestType::PSubscribe => sink.psubscribe(request.arguments).await,
+            SinkRequestType::PUnsubscribe => sink.punsubscribe(request.arguments).await,
+        };
+        let mut should_close = false;
+        if let Err(err) = &response {
+            should_close = err.is_unrecoverable_error();
+        }
+        let _ = request.response.send(response);
+        if should_close {
+            return;
+        }
+    }
+}
+
+async fn stream_handler(
+    stream_sender: &mut tokio::sync::mpsc::UnboundedSender<Msg>,
+    mut stream: super::PubSubStream,
+) {
+    while let Some(msg) = stream.next().await {
+        if stream_sender.send(msg).is_err() {
+            return;
+        }
+    }
 }
 
 enum SinkRequestType {
@@ -158,11 +204,13 @@ impl PubSubManagerSink {
         arguments: Vec<Vec<u8>>,
     ) -> RedisResult<()> {
         let (sender, receiver) = oneshot::channel();
-        self.0.send(SinkRequest {
-            request_type,
-            arguments,
-            response: sender,
-        });
+        self.0
+            .send(SinkRequest {
+                request_type,
+                arguments,
+                response: sender,
+            })
+            .map_err(|_| closed_connection_error())?;
         receiver
             .await
             .unwrap_or_else(|_| Err(closed_connection_error()))
