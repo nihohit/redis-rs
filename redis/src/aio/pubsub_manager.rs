@@ -2,13 +2,13 @@ use super::SharedHandleContainer;
 use crate::aio::Runtime;
 use crate::types::{closed_connection_error, RedisResult};
 use crate::{Client, ConnectionInfo, Msg, RedisError, ToRedisArgs};
-use ::tokio::sync::mpsc::UnboundedSender;
+use futures_util::select;
 use futures_util::stream::{Stream, StreamExt};
 use futures_util::FutureExt;
 use pin_project_lite::pin_project;
 use std::pin::{pin, Pin};
 use std::task::{self, Poll};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 
 /// The sink part of a split async managed Pubsub.
@@ -150,10 +150,11 @@ async fn start_listening(
 
         // We don't want the sink future's completion to kill the connection,
         // because the stream might be used after the sink is dropped
-        let sink_future =
-            pin!(sink_handler(&mut sink_receiver, sink).then(|_| std::future::pending()));
-        let mut stream_future = pin!(stream_handler(&mut stream_sender, stream));
-        tokio::select! {
+        let mut sink_future = pin!(sink_handler(&mut sink_receiver, sink)
+            .then(|_| std::future::pending::<()>())
+            .fuse());
+        let mut stream_future = pin!(stream_handler(&mut stream_sender, stream).fuse());
+        select! {
             _ = sink_future => {}
             _ = &mut stream_future => {
                 continue;
