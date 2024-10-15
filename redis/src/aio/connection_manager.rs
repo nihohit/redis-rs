@@ -17,7 +17,7 @@ use tokio_retry2::{
     MapErr, Retry,
 };
 
-/// ConnectionManager is the configuration for reconnect mechanism and request timing
+/// The configuration for reconnect mechanism and request timing for the [ConnectionManager]
 #[derive(Clone, Debug)]
 pub struct ConnectionManagerConfig {
     /// The resulting duration is calculated by taking the base to the `n`-th power,
@@ -40,11 +40,11 @@ pub struct ConnectionManagerConfig {
 }
 
 impl ConnectionManagerConfig {
-    const DEFAULT_CONNECTION_RETRY_EXPONENT_BASE: u64 = 2;
-    const DEFAULT_CONNECTION_RETRY_FACTOR: u64 = 100;
-    const DEFAULT_NUMBER_OF_CONNECTION_RETRIES: usize = 6;
+    pub(crate) const DEFAULT_CONNECTION_RETRY_EXPONENT_BASE: u64 = 2;
+    pub(crate) const DEFAULT_CONNECTION_RETRY_FACTOR: u64 = 100;
+    pub(crate) const DEFAULT_NUMBER_OF_CONNECTION_RETRIES: usize = 6;
     const DEFAULT_RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::MAX;
-    const DEFAULT_CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::MAX;
+    pub(crate) const DEFAULT_CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::MAX;
 
     /// Creates a new instance of the options with nothing set
     pub fn new() -> Self {
