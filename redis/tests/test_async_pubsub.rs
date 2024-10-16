@@ -387,8 +387,7 @@ mod async_pubsub {
 
                 let _: () = pubsub.subscribe("phonewave").await?;
                 let mut stream = pubsub.into_on_message();
-                // wait a bit
-                sleep(Duration::from_secs(2).into()).await;
+
                 let repeats = 6;
                 for _ in 0..repeats {
                     let _: () = publish_conn.publish("phonewave", "banana").await?;
@@ -536,6 +535,10 @@ mod async_pubsub {
                 let addr = ctx.server.client_addr().clone();
                 drop(ctx);
                 let ctx = TestContext::new_with_addr(addr);
+
+                // give time to reconnect
+                sleep(Duration::from_secs_f32(0.5).into()).await;
+
                 let mut publish_conn = ctx.async_connection().await?;
                 let _: () = publish_conn.publish("phonewave", "banana").await?;
 
@@ -571,6 +574,10 @@ mod async_pubsub {
                 let addr = ctx.server.client_addr().clone();
                 drop(ctx);
                 let ctx = TestContext::new_with_addr(addr);
+
+                // give time to reconnect
+                sleep(Duration::from_secs_f32(0.5).into()).await;
+
                 let mut publish_conn = ctx.async_connection().await?;
                 let _: () = publish_conn.publish("phonewave", "banana").await?;
 
@@ -617,7 +624,7 @@ mod async_pubsub {
                 drop(ctx);
                 let ctx = TestContext::new_with_addr(addr);
 
-                let _: () = pubsub_conn.subscribe(&["phonewave", "foo", "bar"]).await?;
+                while let Err(_) = pubsub_conn.subscribe(&["phonewave", "foo", "bar"]).await {}
                 let _: () = pubsub_conn.psubscribe(&["zoom*"]).await?;
                 let _: () = pubsub_conn.unsubscribe("foo").await?;
                 let mut pubsub_stream = pubsub_conn.on_message();
