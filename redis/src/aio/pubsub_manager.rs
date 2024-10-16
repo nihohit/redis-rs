@@ -3,16 +3,14 @@ use crate::aio::Runtime;
 use crate::subscription_tracker::{SubscriptionAction, SubscriptionTracker};
 use crate::types::{closed_connection_error, RedisResult};
 use crate::{Client, ConnectionInfo, Msg, RedisError, ToRedisArgs};
+use backon::{ExponentialBuilder, Retryable};
 use futures::future::{join_all, select};
 use futures_util::stream::{Stream, StreamExt};
-use futures_util::FutureExt;
 use pin_project_lite::pin_project;
 use std::pin::{pin, Pin};
 use std::task::{self, Poll};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
-use tokio_retry2::strategy::{jitter, ExponentialBackoff};
-use tokio_retry2::{MapErr, Retry};
 
 /// The sink part of a split async managed Pubsub.
 ///
@@ -53,13 +51,10 @@ pin_project! {
 /// The configuration for reconnect mechanism and request timing for the [PubsubManager]
 #[derive(Clone, Debug)]
 pub struct PubsubManagerConfig {
-    /// The resulting duration is calculated by taking the base to the `n`-th power,
-    /// where `n` denotes the number of past attempts.
-    exponent_base: u64,
     /// A multiplicative factor that will be applied to the retry delay.
     ///
     /// For example, using a factor of `1000` will make each delay in units of seconds.
-    factor: u64,
+    factor: f32,
     /// number_of_retries the maximum number of retries before resetting the reconnection attempt
     number_of_retries: usize,
     /// Apply a maximum delay between connection attempts. The delay between attempts won't be longer than max_delay milliseconds.
@@ -77,7 +72,7 @@ impl PubsubManagerConfig {
     /// A multiplicative factor that will be applied to the retry delay.
     ///
     /// For example, using a factor of `1000` will make each delay in units of seconds.
-    pub fn set_factor(mut self, factor: u64) -> Self {
+    pub fn set_factor(mut self, factor: f32) -> Self {
         self.factor = factor;
         self
     }
@@ -85,13 +80,6 @@ impl PubsubManagerConfig {
     /// Apply a maximum delay between connection attempts. The delay between attempts won't be longer than max_delay milliseconds.
     pub fn set_max_delay(mut self, time: u64) -> Self {
         self.max_delay = Some(time);
-        self
-    }
-
-    /// The resulting duration is calculated by taking the base to the `n`-th power,
-    /// where `n` denotes the number of past attempts.
-    pub fn set_exponent_base(mut self, base: u64) -> Self {
-        self.exponent_base = base;
         self
     }
 
@@ -111,8 +99,7 @@ impl PubsubManagerConfig {
 impl Default for PubsubManagerConfig {
     fn default() -> Self {
         Self {
-            exponent_base: crate::aio::connection_manager::ConnectionManagerConfig::DEFAULT_CONNECTION_RETRY_EXPONENT_BASE,
-            factor: crate::aio::connection_manager::ConnectionManagerConfig::DEFAULT_CONNECTION_RETRY_FACTOR,
+            factor: crate::aio::connection_manager::ConnectionManagerConfig::DEFAULT_CONNECTION_RETRY_FACTOR as f32,
             number_of_retries: crate::aio::connection_manager::ConnectionManagerConfig::DEFAULT_NUMBER_OF_CONNECTION_RETRIES,
             max_delay: None,
             connection_timeout: crate::aio::connection_manager::ConnectionManagerConfig::DEFAULT_CONNECTION_TIMEOUT,
@@ -214,26 +201,33 @@ async fn start_listening(
     let mut ready_sender = Some(ready_sender);
     let mut subscription_tracker = SubscriptionTracker::default();
 
-    let mut retry_strategy =
-        ExponentialBackoff::from_millis(config.exponent_base).factor(config.factor);
+    let mut retry_strategy = ExponentialBuilder::default()
+        .with_factor(config.factor)
+        .with_max_times(config.number_of_retries)
+        .with_jitter();
     if let Some(max_delay) = config.max_delay {
-        retry_strategy = retry_strategy.max_delay(std::time::Duration::from_millis(max_delay));
+        retry_strategy = retry_strategy.with_max_delay(std::time::Duration::from_millis(max_delay));
     }
-    let retry_strategy = retry_strategy.map(jitter).take(config.number_of_retries);
     loop {
-        let Ok((sink, stream)) = Retry::spawn(retry_strategy.clone(), || async {
-            match Runtime::locate()
+        println!("connecting");
+        let connect_fn = || async {
+            println!("reconnecting");
+            let result = Runtime::locate()
                 .timeout(config.connection_timeout, client.get_async_pubsub())
-                .await
-            {
+                .await;
+            println!("reconnect result: {}", result.is_ok());
+            match result {
                 Ok(Ok(pubsub)) => Ok(pubsub),
                 Ok(Err(e)) => Err(e),
                 Err(elapsed) => Err(elapsed.into()),
             }
             .map(|pubsub| pubsub.split())
-            .map_transient_err()
-        })
-        .await
+        };
+        println!("reconnected");
+        let Ok((sink, stream)) = connect_fn
+            .retry(retry_strategy)
+            .sleep(|duration| async move { Runtime::locate().sleep(duration).await })
+            .await
         else {
             continue;
         };
@@ -241,29 +235,34 @@ async fn start_listening(
             let _ = sender.send(());
         } else {
             let pipeline = subscription_tracker.get_subscription_pipeline();
+            println!("resubscribing");
             let requests = pipeline.cmd_iter().map(|cmd| {
                 let mut sink = sink.clone();
                 let packed_cmd = cmd.get_packed_command();
                 async move { sink.send_recv(packed_cmd).await }
             });
             // TODO - should we handle errors? how?
-            join_all(requests).await;
+            let res: RedisResult<Vec<()>> = join_all(requests).await.into_iter().collect();
+            if res.is_err() {
+                println!("failed resubscribing");
+                continue;
+            }
+            println!("finished resubscribing");
         }
 
-        // We don't want the sink future's completion to kill the connection,
-        // because the stream might be used after the sink is dropped
-        let sink_future = pin!(
-            sink_handler(&mut sink_receiver, &mut subscription_tracker, sink)
-                .then(|_| std::future::pending::<()>())
-                .fuse()
-        );
-        let stream_future = pin!(stream_handler(&mut stream_sender, stream).fuse());
+        let sink_future = pin!(sink_handler(
+            &mut sink_receiver,
+            &mut subscription_tracker,
+            sink
+        ));
+        let stream_future = pin!(stream_handler(&mut stream_sender, stream));
         // dropping the sink will cause the sink future to stop, but the
         // stream future should be independent and keep running.
         match select(sink_future, stream_future).await {
             futures::future::Either::Left((_, stream_future)) => stream_future.await,
             futures::future::Either::Right(_) => {}
         }
+        println!("disconnected")
     }
 }
 

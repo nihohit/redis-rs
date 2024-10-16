@@ -111,6 +111,19 @@ impl Runtime {
                 .map_err(|_| Elapsed(())),
         }
     }
+
+    pub(crate) async fn sleep(&self, duration: Duration) {
+        match self {
+            #[cfg(feature = "tokio-comp")]
+            Runtime::Tokio => {
+                tokio::time::sleep(duration).await;
+            }
+            #[cfg(feature = "async-std-comp")]
+            Runtime::AsyncStd => {
+                async_std::task::sleep(duration).await;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -121,3 +134,12 @@ impl From<Elapsed> for RedisError {
         io::Error::from(io::ErrorKind::TimedOut).into()
     }
 }
+
+// #[cfg(feature = "connection-manager")]
+// impl backon::Sleeper for Runtime {
+//     type Sleep = ();
+
+//     fn sleep(&self, dur: Duration) -> Self::Sleep {
+//         self.sleep(duration)
+//     }
+// }

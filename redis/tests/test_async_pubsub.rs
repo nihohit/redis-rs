@@ -573,13 +573,17 @@ mod async_pubsub {
 
                 let addr = ctx.server.client_addr().clone();
                 drop(ctx);
+                println!("dropped");
                 let ctx = TestContext::new_with_addr(addr);
+                println!("new server");
 
                 // give time to reconnect
                 sleep(Duration::from_secs_f32(0.5).into()).await;
+                println!("post sleep");
 
                 let mut publish_conn = ctx.async_connection().await?;
                 let _: () = publish_conn.publish("phonewave", "banana").await?;
+                println!("published");
 
                 let msg_payload: String = pubsub_stream.next().await.unwrap().get_payload()?;
                 assert_eq!("banana".to_string(), msg_payload);
@@ -606,7 +610,7 @@ mod async_pubsub {
 
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
-    #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[case::async_std(RuntimeType::AsyncStd)]
     fn dropping_sink_does_not_affect_reconnect_or_resubscribes(#[case] runtime: RuntimeType) {
         test_usage_after_reconnect(true, runtime);
     }
