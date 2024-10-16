@@ -11,7 +11,7 @@ use std::pin::{pin, Pin};
 use std::task::{self, Poll};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
-use tokio_retry2::strategy::ExponentialBackoff;
+use tokio_retry2::strategy::{jitter, ExponentialBackoff};
 use tokio_retry2::{MapErr, Retry};
 
 /// The sink part of a split async managed Pubsub.
@@ -60,7 +60,7 @@ pub struct PubsubManagerConfig {
     ///
     /// For example, using a factor of `1000` will make each delay in units of seconds.
     factor: u64,
-    /// number_of_retries times, with an exponentially increasing delay
+    /// number_of_retries the maximum number of retries before resetting the reconnection attempt
     number_of_retries: usize,
     /// Apply a maximum delay between connection attempts. The delay between attempts won't be longer than max_delay milliseconds.
     max_delay: Option<u64>,
@@ -136,9 +136,6 @@ impl PubSubManager {
         connection_info: &ConnectionInfo,
         config: PubsubManagerConfig,
     ) -> RedisResult<Self> {
-        #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
-        compile_error!("tokio-comp or async-std-comp features required for aio feature");
-
         let (sink_sender, sink_receiver) = unbounded_channel();
         let (stream_sender, stream_receiver) = unbounded_channel();
         let (setup_complete_sender, setup_complete_receiver) = oneshot::channel();
@@ -222,10 +219,8 @@ async fn start_listening(
     if let Some(max_delay) = config.max_delay {
         retry_strategy = retry_strategy.max_delay(std::time::Duration::from_millis(max_delay));
     }
+    let retry_strategy = retry_strategy.map(jitter).take(config.number_of_retries);
     loop {
-        // TODO - remove unwrap, retry and handle failure
-        println!("connecting");
-
         let Ok((sink, stream)) = Retry::spawn(retry_strategy.clone(), || async {
             match Runtime::locate()
                 .timeout(config.connection_timeout, client.get_async_pubsub())
@@ -243,7 +238,6 @@ async fn start_listening(
             continue;
         };
         if let Some(sender) = ready_sender.take() {
-            println!("setup completed");
             let _ = sender.send(());
         } else {
             let pipeline = subscription_tracker.get_subscription_pipeline();
@@ -255,7 +249,6 @@ async fn start_listening(
             // TODO - should we handle errors? how?
             join_all(requests).await;
         }
-        println!("connected");
 
         // We don't want the sink future's completion to kill the connection,
         // because the stream might be used after the sink is dropped
@@ -271,7 +264,6 @@ async fn start_listening(
             futures::future::Either::Left((_, stream_future)) => stream_future.await,
             futures::future::Either::Right(_) => {}
         }
-        println!("both dropped");
     }
 }
 
@@ -301,11 +293,9 @@ async fn sink_handler(
         }
         let _ = request.response.send(response);
         if should_close {
-            println!("should close sink");
             return;
         }
     }
-    println!("closing sink");
 }
 
 async fn stream_handler(
@@ -317,7 +307,6 @@ async fn stream_handler(
             return;
         }
     }
-    println!("stream completed");
 }
 
 enum SinkRequestType {

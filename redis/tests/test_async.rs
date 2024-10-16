@@ -1191,7 +1191,6 @@ mod basic_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
-    #[cfg(feature = "connection-manager")]
     fn test_multiplexed_connection_kills_connection_on_drop_even_when_blocking(
         #[case] runtime: RuntimeType,
     ) {
