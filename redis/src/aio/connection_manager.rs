@@ -2,6 +2,7 @@ use super::RedisFuture;
 use crate::{
     aio::{check_resp3, ConnectionLike, MultiplexedConnection, Runtime},
     cmd,
+    subscription_tracker::{self, SubscriptionTracker},
     types::{AsyncPushSender, RedisError, RedisResult, Value},
     AsyncConnectionConfig, Client, Cmd, ToRedisArgs,
 };
@@ -13,6 +14,7 @@ use futures::{
 };
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// The configuration for reconnect mechanism and request timing for the [ConnectionManager]
 #[derive(Clone, Debug)]
@@ -34,6 +36,8 @@ pub struct ConnectionManagerConfig {
     connection_timeout: Option<std::time::Duration>,
     /// sender channel for push values
     push_sender: Option<AsyncPushSender>,
+    /// if true, the manager should resubscribe automatically to all pubsub channels after reconnect.
+    resubsrcibe_automatically: bool,
 }
 
 impl ConnectionManagerConfig {
@@ -98,6 +102,12 @@ impl ConnectionManagerConfig {
         self.push_sender = Some(sender);
         self
     }
+
+    /// Configures the connection manager to automatically resubscribe to all pubsub channels after reconnecting.
+    pub fn set_automatic_resubscription(mut self) -> Self {
+        self.resubsrcibe_automatically = true;
+        self
+    }
 }
 
 impl Default for ConnectionManagerConfig {
@@ -110,6 +120,7 @@ impl Default for ConnectionManagerConfig {
             response_timeout: Self::DEFAULT_RESPONSE_TIMEOUT,
             connection_timeout: Self::DEFAULT_CONNECTION_TIMEOUT,
             push_sender: None,
+            resubsrcibe_automatically: false,
         }
     }
 }
@@ -152,6 +163,7 @@ pub struct ConnectionManager {
     runtime: Runtime,
     retry_strategy: ExponentialBuilder,
     connection_config: AsyncConnectionConfig,
+    subscription_tracker: Option<Arc<Mutex<SubscriptionTracker>>>,
 }
 
 /// A `RedisResult` that can be cloned because `RedisError` is behind an `Arc`.
@@ -294,6 +306,11 @@ impl ConnectionManager {
 
         let connection =
             Self::new_connection(client.clone(), retry_strategy, &connection_config).await?;
+        let subscription_tracker = if config.resubsrcibe_automatically {
+            Some(SubscriptionTracker::default())
+        } else {
+            None
+        };
 
         // Wrap the connection in an `ArcSwap` instance for fast atomic access
         Ok(Self {
@@ -304,6 +321,7 @@ impl ConnectionManager {
             runtime,
             retry_strategy,
             connection_config,
+            subscription_tracker,
         })
     }
 
