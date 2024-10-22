@@ -115,6 +115,14 @@ impl Default for PubsubManagerConfig {
 /// If the pubsub disconnects from the server, it will
 /// automatically attempt to reconnect and resubscribe to
 /// all channels.
+///
+/// IMPORTANT: Due to Redis' weak pubsub contract, messages
+/// that are published before the manager is connected, or
+/// during reconnect attempts, won't be received. The manager
+/// doesn't notify on disconnects or reconnects, so the user
+/// cannot be aware of missed messages. For stronger guarantees,
+/// Users of Redis 6 or above can use the RESP3 pubsub interface,
+/// or the streams API.
 pub struct PubSubManager {
     sink: PubSubManagerSink,
     stream: PubSubManagerStream,
