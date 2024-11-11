@@ -33,6 +33,8 @@ pub enum RuntimeType {
     Tokio,
     #[cfg(feature = "async-std-comp")]
     AsyncStd,
+    #[cfg(feature = "monoio-comp")]
+    MonoIo,
 }
 
 #[cfg(feature = "aio")]
@@ -65,14 +67,16 @@ where
     let f = futures_util::FutureExt::fuse(f);
     futures::pin_mut!(f, check_future);
 
+    let f = async move {
+        futures::select! {res = f => res, err = check_future => err}
+    };
+
     let res = match runtime {
-        RuntimeType::Tokio => current_thread_runtime().block_on(async {
-            futures::select! {res = f => res, err = check_future => err}
-        }),
+        RuntimeType::Tokio => current_thread_runtime().block_on(f),
         #[cfg(feature = "async-std-comp")]
-        RuntimeType::AsyncStd => block_on_all_using_async_std(async move {
-            futures::select! {res = f => res, err = check_future => err}
-        }),
+        RuntimeType::AsyncStd => block_on_all_using_async_std(f),
+        #[cfg(feature = "monoio-comp")]
+        RuntimeType::MonoIo => block_on_all_using_smol(f),
     };
 
     let _ = panic::take_hook();
@@ -87,6 +91,7 @@ where
 #[rstest::rstest]
 #[case::tokio(RuntimeType::Tokio)]
 #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+#[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
 #[should_panic(expected = "Internal thread panicked")]
 fn test_block_on_all_panics_from_spawns(#[case] runtime: RuntimeType) {
     let _ = block_on_all(
@@ -108,6 +113,21 @@ where
     F: Future,
 {
     async_std::task::block_on(f)
+}
+
+#[cfg(feature = "monoio-comp")]
+fn block_on_all_using_smol<F>(f: F) -> F::Output
+where
+    F: Future,
+{
+    use monoio::{LegacyDriver, RuntimeBuilder};
+
+    // TODO - support io_uring driver
+    let mut runtime = RuntimeBuilder::<LegacyDriver>::new()
+        .enable_timer()
+        .build()
+        .unwrap();
+    runtime.block_on(f)
 }
 
 #[cfg(any(feature = "cluster", feature = "cluster-async"))]

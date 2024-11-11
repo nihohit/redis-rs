@@ -41,6 +41,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_basic_cmd(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -68,6 +69,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_basic_eval(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -94,6 +96,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_basic_script(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -118,6 +121,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_route_flush_to_specific_node(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -158,6 +162,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_route_flush_to_node_by_address(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -204,6 +209,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_route_info_to_nodes(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new_with_config(RedisClusterConfiguration {
             num_nodes: 12,
@@ -292,6 +298,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_cluster_resp3(#[case] runtime: RuntimeType) {
         if use_protocol() == ProtocolVersion::RESP2 {
             return;
@@ -330,6 +337,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_basic_pipe(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -354,6 +362,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_multi_shard_commands(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new();
 
@@ -377,6 +386,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_basic_failover(#[case] runtime: RuntimeType) {
         block_on_all(
             async move {
@@ -1838,6 +1848,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_with_username_and_password(#[case] runtime: RuntimeType) {
         let cluster = TestClusterContext::new_with_cluster_client_builder(|builder| {
             builder
@@ -1984,6 +1995,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_handle_complete_server_disconnect_without_panicking(
         #[case] runtime: RuntimeType,
     ) {
@@ -2015,6 +2027,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_reconnect_after_complete_server_disconnect(#[case] runtime: RuntimeType) {
         let cluster =
             TestClusterContext::new_with_cluster_client_builder(|builder| builder.retries(2));
@@ -2067,6 +2080,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_async_cluster_reconnect_after_complete_server_disconnect_route_to_many(
         #[case] runtime: RuntimeType,
     ) {
@@ -2189,6 +2203,7 @@ mod cluster_async {
     #[rstest]
     #[case::tokio(RuntimeType::Tokio)]
     #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+    #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
     fn test_kill_connection_on_drop_even_when_blocking(#[case] runtime: RuntimeType) {
         let ctx = TestClusterContext::new_with_cluster_client_builder(|builder| builder.retries(3));
 
@@ -2306,6 +2321,7 @@ mod cluster_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
         fn test_async_cluster_basic_cmd_with_mtls(#[case] runtime: RuntimeType) {
             let cluster = TestClusterContext::new_with_mtls();
             block_on_all(
@@ -2333,6 +2349,7 @@ mod cluster_async {
         #[rstest]
         #[case::tokio(RuntimeType::Tokio)]
         #[cfg_attr(feature = "async-std-comp", case::async_std(RuntimeType::AsyncStd))]
+        #[cfg_attr(feature = "monoio-comp", case::monoio(RuntimeType::MonoIo))]
         fn test_async_cluster_should_not_connect_without_mtls_enabled(
             #[case] runtime: RuntimeType,
         ) {

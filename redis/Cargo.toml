@@ -61,6 +61,8 @@ futures-sink = { version = "0.3.31", optional = true }
 
 # Only needed for async_std support
 async-std = { version = "1.13.0", optional = true }
+#only needed for monoio support
+monoio = { version = "0.2", optional = true }
 
 # Only needed for native tls
 native-tls = { version = "0.2", optional = true }
@@ -122,6 +124,7 @@ sentinel = ["dep:rand"]
 tcp_nodelay = []
 num-bigint = []
 disable-client-setinfo = []
+monoio-comp = ["dep:monoio"]
 
 # Deprecated features
 tls = ["tls-native-tls"] # use "tls-native-tls" instead
