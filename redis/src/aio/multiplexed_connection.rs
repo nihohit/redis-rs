@@ -3,11 +3,10 @@ use crate::aio::{check_resp3, setup_connection};
 #[cfg(feature = "cache-aio")]
 use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
 use crate::cmd::Cmd;
-#[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
-use crate::parser::ValueCodec;
 use crate::types::{closed_connection_error, RedisError, RedisFuture, RedisResult, Value};
 use crate::{
-    cmd, AsyncConnectionConfig, ProtocolVersion, PushInfo, RedisConnectionInfo, ToRedisArgs,
+    cmd, AsyncConnectionConfig, ErrorKind, ProtocolVersion, PushInfo, RedisConnectionInfo,
+    ToRedisArgs,
 };
 use ::tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -20,6 +19,9 @@ use futures_util::{
     stream::{self, Stream, StreamExt},
 };
 use pin_project_lite::pin_project;
+use redis_protocol::codec::Resp3;
+use redis_protocol::error::RedisProtocolError;
+use redis_protocol::resp3::types::BytesFrame;
 use std::collections::VecDeque;
 use std::fmt;
 use std::fmt::Debug;
@@ -27,8 +29,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
 use std::time::Duration;
-#[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
-use tokio_util::codec::Decoder;
+use tokio_util::codec::Framed;
 
 // Senders which the result of a single request are sent through
 type PipelineOutput = oneshot::Sender<RedisResult<Value>>;
@@ -72,7 +73,7 @@ struct InFlight {
 
 // A single message sent through the pipeline
 struct PipelineMessage {
-    input: Vec<u8>,
+    input: BytesFrame,
     output: PipelineOutput,
     // If `None`, this is a single request, not a pipeline of multiple requests.
     // If `Some`, the first value is the number of responses to skip,
@@ -138,7 +139,9 @@ where
         #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> Self
     where
-        T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: Sink<BytesFrame, Error = RedisProtocolError>
+            + Stream<Item = RedisResult<Value>>
+            + 'static,
     {
         PipelineSink {
             sink_stream,
@@ -261,7 +264,7 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+    T: Sink<BytesFrame, Error = RedisProtocolError> + Stream<Item = RedisResult<Value>> + 'static,
 {
     type Error = ();
 
@@ -273,7 +276,7 @@ where
         match ready!(self.as_mut().project().sink_stream.poll_ready(cx)) {
             Ok(()) => Ok(()).into(),
             Err(err) => {
-                *self.project().error = Some(err);
+                *self.project().error = Some(err.into());
                 Ok(()).into()
             }
         }
@@ -313,7 +316,7 @@ where
                 Ok(())
             }
             Err(err) => {
-                let _ = output.send(Err(err));
+                let _ = output.send(Err(err.into()));
                 Err(())
             }
         }
@@ -329,7 +332,7 @@ where
             .sink_stream
             .poll_flush(cx)
             .map_err(|err| {
-                self.as_mut().send_result(Err(err));
+                self.as_mut().send_result(Err(err.into()));
             }))?;
         self.poll_read(cx)
     }
@@ -345,7 +348,7 @@ where
         }
         let this = self.as_mut().project();
         this.sink_stream.poll_close(cx).map_err(|err| {
-            self.send_result(Err(err));
+            self.send_result(Err(err.into()));
         })
     }
 }
@@ -357,7 +360,9 @@ impl Pipeline {
         #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: Sink<BytesFrame, Error = RedisProtocolError>
+            + Stream<Item = RedisResult<Value>>
+            + 'static,
         T: Send + 'static,
         T::Item: Send,
         T::Error: Send,
@@ -381,7 +386,7 @@ impl Pipeline {
 
     async fn send_recv(
         &mut self,
-        input: Vec<u8>,
+        input: BytesFrame,
         // If `None`, this is a single request, not a pipeline of multiple requests.
         // If `Some`, the value inside defines how the response should look like
         expectation: Option<PipelineResponseExpectation>,
@@ -497,7 +502,16 @@ impl MultiplexedConnection {
         #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
         compile_error!("tokio-comp or async-std-comp features required for aio feature");
 
-        let codec = ValueCodec::default().framed(stream);
+        let codec = Framed::new(stream, Resp3::default()).map(|resp| {
+            resp.map_err(|err| {
+                RedisError::from((
+                    ErrorKind::ParseError,
+                    "response isn't in UTF8",
+                    err.to_string(),
+                ))
+            })
+            .and_then(|resp| Value::try_from(resp))
+        });
         if config.push_sender.is_some() {
             check_resp3!(
                 connection_info.protocol,
@@ -600,7 +614,7 @@ impl MultiplexedConnection {
             }
         }
         self.pipeline
-            .send_recv(cmd.get_packed_command(), None, self.response_timeout)
+            .send_recv(cmd.get_byte_frame(), None, self.response_timeout)
             .await
             .map_err(|err| err.unwrap_or_else(closed_connection_error))
     }
@@ -637,7 +651,7 @@ impl MultiplexedConnection {
         let result = self
             .pipeline
             .send_recv(
-                cmd.get_packed_pipeline(),
+                cmd.get_byte_frame(),
                 Some(PipelineResponseExpectation {
                     skipped_response_count: offset,
                     expected_response_count: count,

@@ -2,6 +2,8 @@
 
 #[cfg(feature = "cache-aio")]
 use crate::cmd::CommandCacheConfig;
+use redis_protocol::resp3::types::BytesFrame;
+
 use crate::cmd::{cmd, cmd_len, Cmd};
 use crate::connection::ConnectionLike;
 use crate::types::{
@@ -75,6 +77,14 @@ impl Pipeline {
     #[cfg(feature = "aio")]
     pub(crate) fn is_transaction(&self) -> bool {
         self.transaction_mode
+    }
+
+    pub(crate) fn get_byte_frame(&self) -> BytesFrame {
+        let data = self.cmd_iter().map(|cmd| cmd.get_byte_frame()).collect();
+        BytesFrame::Array {
+            data,
+            attributes: None,
+        }
     }
 
     /// Returns the encoded pipeline commands.

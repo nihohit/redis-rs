@@ -1,6 +1,8 @@
 #[cfg(feature = "ahash")]
 pub(crate) use ahash::{AHashMap as HashMap, AHashSet as HashSet};
 use num_bigint::BigInt;
+use redis_protocol::error::RedisProtocolError;
+use redis_protocol::resp3::types::{BytesFrame, Resp3Frame};
 use std::borrow::Cow;
 #[cfg(not(feature = "ahash"))]
 pub(crate) use std::collections::{HashMap, HashSet};
@@ -13,6 +15,8 @@ use std::io;
 use std::ops::Deref;
 use std::str::{from_utf8, Utf8Error};
 use std::string::FromUtf8Error;
+
+use crate::parser::{err_parser, get_push_kind};
 
 macro_rules! invalid_type_error {
     ($v:expr, $det:expr) => {{
@@ -541,6 +545,149 @@ impl Value {
             vec.push((key.extract_error()?, value.extract_error()?));
         }
         Ok(vec)
+    }
+
+    fn with_attribute(
+        self,
+        attributes: Option<std::collections::HashMap<BytesFrame, BytesFrame>>,
+    ) -> RedisResult<Self> {
+        match attributes {
+            Some(attributes) => {
+                let attributes = attributes
+                    .into_iter()
+                    .map(|(key, value)| Ok((key.try_into()?, value.try_into()?)))
+                    .collect::<RedisResult<Vec<_>>>()?;
+                Ok(Value::Attribute {
+                    data: Box::new(self),
+                    attributes,
+                })
+            }
+            None => Ok(self),
+        }
+    }
+}
+
+impl From<RedisProtocolError> for RedisError {
+    fn from(value: RedisProtocolError) -> Self {
+        match value.kind() {
+            redis_protocol::error::RedisProtocolErrorKind::EncodeError => todo!(),
+            redis_protocol::error::RedisProtocolErrorKind::BufferTooSmall(_) => todo!(),
+            redis_protocol::error::RedisProtocolErrorKind::DecodeError => todo!(),
+            redis_protocol::error::RedisProtocolErrorKind::IO(error) => {
+                let error: std::io::Error = (*error).clone();
+                RedisError::from(error)
+            }
+            redis_protocol::error::RedisProtocolErrorKind::Unknown => todo!(),
+            redis_protocol::error::RedisProtocolErrorKind::Parse => {
+                RedisError::from((ErrorKind::ParseError, value.details()))
+            }
+        }
+    }
+}
+
+impl TryFrom<BytesFrame> for Value {
+    type Error = RedisError;
+    fn try_from(value: BytesFrame) -> RedisResult<Self> {
+        match value {
+            BytesFrame::BlobString { data, attributes } => {
+                Value::BulkString(data.to_vec()).with_attribute(attributes)
+            }
+            BytesFrame::BlobError { data, attributes } => {
+                let str = std::str::from_utf8(&data).map_err(|_| {
+                    RedisError::from((ErrorKind::ParseError, "response isn't in UTF8"))
+                })?;
+                Value::ServerError(err_parser(str)).with_attribute(attributes)
+            }
+            BytesFrame::SimpleString { data, attributes } => {
+                let string = String::from_utf8(data.to_vec()).map_err(|_| {
+                    RedisError::from((ErrorKind::ParseError, "response isn't in UTF8"))
+                })?;
+                Value::SimpleString(string).with_attribute(attributes)
+            }
+            BytesFrame::SimpleError { data, attributes } => {
+                Value::ServerError(err_parser(&data)).with_attribute(attributes)
+            }
+            BytesFrame::Boolean { data, attributes } => {
+                Value::Boolean(data).with_attribute(attributes)
+            }
+            BytesFrame::Null => Ok(Value::Nil),
+            BytesFrame::Number { data, attributes } => Value::Int(data).with_attribute(attributes),
+            BytesFrame::Double { data, attributes } => {
+                Value::Double(data).with_attribute(attributes)
+            }
+            BytesFrame::BigNumber { data, attributes } => {
+                let bigint = BigInt::parse_bytes(&data, 10).ok_or_else(|| {
+                    RedisError::from((ErrorKind::ParseError, "Expected bigint, got garbage"))
+                })?;
+                Value::BigNumber(bigint).with_attribute(attributes)
+            }
+            BytesFrame::VerbatimString {
+                data,
+                format,
+                attributes,
+            } => {
+                let format = match format {
+                    redis_protocol::resp3::types::VerbatimStringFormat::Text => {
+                        VerbatimFormat::Text
+                    }
+                    redis_protocol::resp3::types::VerbatimStringFormat::Markdown => {
+                        VerbatimFormat::Markdown
+                    }
+                };
+                let text = String::from_utf8(data.to_vec()).map_err(|_| {
+                    RedisError::from((ErrorKind::ParseError, "response isn't in UTF8"))
+                })?;
+                Value::VerbatimString { format, text }.with_attribute(attributes)
+            }
+
+            BytesFrame::Array { data, attributes } => {
+                let array = data
+                    .into_iter()
+                    .map(Value::try_from)
+                    .collect::<RedisResult<Vec<_>>>()?;
+                Value::Array(array).with_attribute(attributes)
+            }
+            BytesFrame::Map { data, attributes } => {
+                let map = data
+                    .into_iter()
+                    .map(|(key, value)| Ok((Value::try_from(key)?, Value::try_from(value)?)))
+                    .collect::<RedisResult<Vec<_>>>()?;
+                Value::Map(map).with_attribute(attributes)
+            }
+            BytesFrame::Set { data, attributes } => {
+                let set = data
+                    .into_iter()
+                    .map(Value::try_from)
+                    .collect::<RedisResult<Vec<_>>>()?;
+                Value::Set(set).with_attribute(attributes)
+            }
+            BytesFrame::Push {
+                mut data,
+                attributes,
+            } => {
+                let Some(kind) = data.drain(0..1).next() else {
+                    return Ok(Value::Nil);
+                };
+                let Some(kind_str) = kind.as_str() else {
+                    return Err(RedisError::from((
+                        ErrorKind::ParseError,
+                        "response isn't in UTF8",
+                    )));
+                };
+                let kind = get_push_kind(kind_str);
+                let data = data
+                    .into_iter()
+                    .map(Value::try_from)
+                    .collect::<RedisResult<Vec<_>>>()?;
+                Value::Push { kind, data }.with_attribute(attributes)
+            }
+            BytesFrame::Hello {
+                version,
+                auth,
+                setname,
+            } => todo!(),
+            BytesFrame::ChunkedString(_) => todo!(),
+        }
     }
 }
 

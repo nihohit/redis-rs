@@ -4,6 +4,7 @@ use futures_util::{
     task::{Context, Poll},
     Stream, StreamExt,
 };
+use redis_protocol::resp3::types::BytesFrame;
 #[cfg(feature = "aio")]
 use std::pin::Pin;
 #[cfg(feature = "cache-aio")]
@@ -672,6 +673,28 @@ impl Cmd {
     #[inline]
     pub(crate) fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
         &self.cache
+    }
+
+    pub(crate) fn get_byte_frame(&self) -> BytesFrame {
+        let cursor = self.cursor;
+        let mut buf = ::itoa::Buffer::new();
+        let data = self
+            .args_iter()
+            .map(|arg| {
+                let bytes = match arg {
+                    Arg::Cursor => buf.format(cursor.unwrap()).as_bytes(),
+                    Arg::Simple(val) => val,
+                };
+                BytesFrame::BlobString {
+                    data: bytes.into(),
+                    attributes: None,
+                }
+            })
+            .collect();
+        BytesFrame::Array {
+            data,
+            attributes: None,
+        }
     }
 }
 

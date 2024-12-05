@@ -27,7 +27,7 @@ use num_bigint::BigInt;
 
 const MAX_RECURSE_DEPTH: usize = 100;
 
-fn err_parser(line: &str) -> ServerError {
+pub fn err_parser(line: &str) -> ServerError {
     let mut pieces = line.splitn(2, ' ');
     let kind = match pieces.next().unwrap() {
         "ERR" => ServerErrorKind::ResponseError,
@@ -54,8 +54,8 @@ fn err_parser(line: &str) -> ServerError {
     ServerError::KnownError { kind, detail }
 }
 
-pub fn get_push_kind(kind: String) -> PushKind {
-    match kind.as_str() {
+pub fn get_push_kind(kind: impl AsRef<str>) -> PushKind {
+    match kind.as_ref() {
         "invalidate" => PushKind::Invalidate,
         "message" => PushKind::Message,
         "pmessage" => PushKind::PMessage,
@@ -66,7 +66,7 @@ pub fn get_push_kind(kind: String) -> PushKind {
         "subscribe" => PushKind::Subscribe,
         "psubscribe" => PushKind::PSubscribe,
         "ssubscribe" => PushKind::SSubscribe,
-        _ => PushKind::Other(kind),
+        _ => PushKind::Other(kind.as_ref().to_string()),
     }
 }
 

@@ -12,7 +12,7 @@ use crate::{ErrorKind, RedisResult};
 pub(crate) const SLOT_SIZE: u16 = 16384;
 
 fn slot(key: &[u8]) -> u16 {
-    crc16::State::<crc16::XMODEM>::calculate(key) % SLOT_SIZE
+    redis_protocol::redis_keyslot(key)
 }
 
 #[derive(Clone, PartialEq, Debug)]
