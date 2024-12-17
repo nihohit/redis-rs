@@ -171,7 +171,7 @@ impl RedisRuntime for Tokio {
         Ok(UnixStreamTokio::connect(path).await.map(Tokio::Unix)?)
     }
 
-    fn spawn(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
+    fn spawn_across_threads(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
         TaskHandle::Tokio(tokio::spawn(f))
     }
 
@@ -184,4 +184,10 @@ impl RedisRuntime for Tokio {
             Tokio::Unix(x) => Box::pin(x),
         }
     }
+
+    fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle {
+        TaskHandle::Tokio(tokio::task::spawn_local(f))
+    }
+
+    const SUPPORTS_CROSS_THREAD_SPAWNING: bool = true;
 }

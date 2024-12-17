@@ -54,10 +54,26 @@ pub(crate) trait RedisRuntime: AsyncStream + Sized + 'static {
     #[cfg(unix)]
     async fn connect_unix(path: &Path) -> RedisResult<Self>;
 
-    fn spawn(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle;
+    fn spawn_across_threads(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle;
+
+    fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle;
 
     fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>>;
+
+    const SUPPORTS_CROSS_THREAD_SPAWNING: bool;
 }
+
+macro_rules! spawn {
+    ($runtime: ty, $action: expr) => {
+        if <$runtime>::SUPPORTS_CROSS_THREAD_SPAWNING {
+            <$runtime>::spawn_across_threads($action)
+        } else {
+            <$runtime>::spawn_on_local_thread($action)
+        }
+    };
+}
+
+pub(crate) use spawn;
 
 /// Trait for objects that implements `AsyncRead` and `AsyncWrite`
 pub trait AsyncStream: AsyncRead + AsyncWrite {}

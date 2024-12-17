@@ -100,6 +100,9 @@ pub fn prefer_tokio() {
 
 impl Runtime {
     pub(crate) fn locate() -> Self {
+        if let Some(runtime) = CHOSEN_RUNTIME.with_borrow(|r| *r) {
+            return runtime;
+        }
         #[cfg(all(
             feature = "tokio-comp",
             not(feature = "monoio-comp"),
@@ -128,22 +131,14 @@ impl Runtime {
         }
 
         // Is this a real-world scenario? Who, besides our test case, compile with multiple runtime support?
-        #[cfg(all(
-            feature = "tokio-comp",
-            feature = "monoio-comp",
-            feature = "async-std-comp"
-        ))]
+        #[cfg(all(feature = "tokio-comp", feature = "async-std-comp"))]
         {
-            if let Some(runtime) = CHOSEN_RUNTIME.with_borrow(|r| *r) {
-                return runtime;
-            }
-
-            if ::tokio::runtime::Handle::try_current().is_ok() {
+            return if ::tokio::runtime::Handle::try_current().is_ok() {
                 Runtime::Tokio
             } else {
                 // TODO - is there a way to disambiguate whether there's an async-std runtime or a monoio runtime present?
                 Runtime::AsyncStd
-            }
+            };
         }
 
         #[cfg(all(
@@ -156,18 +151,7 @@ impl Runtime {
                 "tokio-comp, monoio-comp, or async-std-comp features required for aio feature"
             )
         }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn spawn(&self, f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
-        match self {
-            #[cfg(feature = "tokio-comp")]
-            Runtime::Tokio => crate_tokio::Tokio::spawn(f),
-            #[cfg(feature = "async-std-comp")]
-            Runtime::AsyncStd => crate_async_std::AsyncStd::spawn(f),
-            #[cfg(feature = "monoio-comp")]
-            Runtime::MonoIo => crate_smol::MonoIo::spawn(f),
-        }
+        panic!("No runtime was marked as preferred, and used runtime cannot be inferred.")
     }
 
     pub(crate) async fn timeout<F: Future>(
