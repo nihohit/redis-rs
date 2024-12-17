@@ -4,7 +4,6 @@ use crate::connection::TlsConnParams;
 #[cfg(feature = "tokio-rustls-comp")]
 use crate::tls::TlsConnParams;
 use crate::RedisResult;
-use async_trait::async_trait;
 use monoio::net::TcpStream;
 use std::path::Path;
 use std::pin::Pin;
