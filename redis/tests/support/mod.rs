@@ -72,11 +72,20 @@ where
     };
 
     let res = match runtime {
-        RuntimeType::Tokio => current_thread_runtime().block_on(f),
+        RuntimeType::Tokio => current_thread_runtime().block_on(async move {
+            redis::aio::prefer_tokio();
+            f.await
+        }),
         #[cfg(feature = "async-std-comp")]
-        RuntimeType::AsyncStd => block_on_all_using_async_std(f),
+        RuntimeType::AsyncStd => async_std::task::block_on(async move {
+            redis::aio::prefer_async_std();
+            f.await
+        }),
         #[cfg(feature = "monoio-comp")]
-        RuntimeType::MonoIo => block_on_all_using_smol(f),
+        RuntimeType::MonoIo => block_on_all_using_monoio(async move {
+            redis::aio::prefer_monoio();
+            f.await
+        }),
     };
 
     let _ = panic::take_hook();
@@ -107,16 +116,8 @@ fn test_block_on_all_panics_from_spawns(#[case] runtime: RuntimeType) {
     );
 }
 
-#[cfg(feature = "async-std-comp")]
-fn block_on_all_using_async_std<F>(f: F) -> F::Output
-where
-    F: Future,
-{
-    async_std::task::block_on(f)
-}
-
 #[cfg(feature = "monoio-comp")]
-fn block_on_all_using_smol<F>(f: F) -> F::Output
+fn block_on_all_using_monoio<F>(f: F) -> F::Output
 where
     F: Future,
 {

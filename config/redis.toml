@@ -1,10 +1,10 @@
 [[rule]]
 when = "cluster-async"
-require = ["tokio-comp", "OR", "async-std-comp"]
+require = ["tokio-comp", "OR", "async-std-comp", "OR", "monoio-comp"]
 
 [[rule]]
 when = "connection-manager"
-require = ["tokio-comp", "OR", "async-std-comp"]
+require = ["tokio-comp", "OR", "async-std-comp", "OR", "monoio-comp"]
 
 [[rule]]
 when = ["tls-rustls", "tokio-comp"]
@@ -31,9 +31,14 @@ require = ["tls-rustls"]
 when = ["tokio-native-tls-comp", "OR", "async-std-native-tls-comp", "OR", "tls-native-tls"]
 forbid = ["tokio-rustls-comp", "OR", "tls-rustls-webpki-roots", "OR", "tls-rustls", "OR", "tls-rustls-insecure", "OR", "async-std-rustls-comp"]
 
-# we don't need to check whether the async-std features are working with the tokio features
+# we don't need to check whether the async-std or monoio features are working with the tokio features
 [[rule]]
-when = ["async-std-native-tls-comp", "OR", "async-std-comp", "OR", "async-std-rustls-comp"]
+when = ["async-std-native-tls-comp", "OR", "async-std-comp", "OR", "monoio-comp", "OR", "async-std-rustls-comp"]
+forbid = ["tokio-rustls-comp", "OR", "tokio-native-tls-comp", "OR", "tokio-comp"]
+
+# we don't need to check whether the tokio or async-std features are working with the monoio features
+[[rule]]
+when = ["async-std-native-tls-comp", "OR", "async-std-comp", "OR", "tokio-native-tls-comp", "OR", "async-std-rustls-comp"]
 forbid = ["tokio-rustls-comp", "OR", "tokio-native-tls-comp", "OR", "tokio-comp"]
 
 [[rule]]

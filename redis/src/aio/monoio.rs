@@ -5,18 +5,35 @@ use crate::connection::TlsConnParams;
 use crate::tls::TlsConnParams;
 use crate::RedisResult;
 use async_trait::async_trait;
-use futures::{AsyncRead, AsyncWrite};
+use monoio::net::TcpStream;
 use std::path::Path;
+use std::pin::Pin;
 use std::{future::Future, net::SocketAddr};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 pub(crate) enum MonoIo {
-    Tcp,
+    Tcp(monoio::net::tcp::TcpStream),
+}
+
+async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<TcpStream> {
+    let socket = TcpStream::connect(socket_addr).await?;
+    #[cfg(feature = "tcp_nodelay")]
+    socket.set_nodelay(true)?;
+
+    #[cfg(feature = "keep-alive")]
+    {
+        //For now rely on system defaults
+        const KEEP_ALIVE: socket2::TcpKeepalive = socket2::TcpKeepalive::new();
+        socket.set_tcp_keepalive(None, None, None);
+    }
+
+    Ok(socket)
 }
 
 #[async_trait]
 impl RedisRuntime for MonoIo {
     async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<Self> {
-        todo!()
+        Ok(MonoIo::Tcp(connect_tcp(socket_addr).await?))
     }
 
     #[cfg(all(feature = "tls-native-tls", not(feature = "tls-rustls")))]
@@ -44,8 +61,12 @@ impl RedisRuntime for MonoIo {
         todo!()
     }
 
-    fn spawn(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
+    fn spawn(f: impl Future<Output = ()> + 'static) -> TaskHandle {
         TaskHandle::MonoIo(monoio::spawn(f))
+    }
+
+    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
+        panic!("Cannot use a Send + Sync connection with monoio")
     }
 }
 
@@ -54,21 +75,21 @@ impl AsyncWrite for MonoIo {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
         todo!()
     }
 
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
         todo!()
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
         todo!()
     }
 }
@@ -77,10 +98,8 @@ impl AsyncRead for MonoIo {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         todo!()
     }
 }
-
-impl AsyncStream for MonoIo {}

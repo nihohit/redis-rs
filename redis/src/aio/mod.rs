@@ -24,6 +24,10 @@ use crate::tls::TlsConnParams;
 #[cfg(all(feature = "tls-native-tls", not(feature = "tls-rustls")))]
 use crate::connection::TlsConnParams;
 
+/// Enables the monoio compatibility
+#[cfg(feature = "monoio-comp")]
+#[cfg_attr(docsrs, doc(cfg(feature = "monoio-comp")))]
+pub mod monoio;
 /// Enables the tokio compatibility
 #[cfg(feature = "tokio-comp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio-comp")))]
@@ -33,7 +37,7 @@ mod pubsub;
 pub use pubsub::{PubSub, PubSubSink, PubSubStream};
 
 /// Represents the ability of connecting via TCP or via Unix socket
-pub(crate) trait RedisRuntime: AsyncStream + Send + Sync + Sized + 'static {
+pub(crate) trait RedisRuntime: AsyncStream + Sized + 'static {
     /// Performs a TCP connection
     async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<Self>;
 
@@ -52,9 +56,7 @@ pub(crate) trait RedisRuntime: AsyncStream + Send + Sync + Sized + 'static {
 
     fn spawn(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle;
 
-    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
-        Box::pin(self)
-    }
+    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>>;
 }
 
 /// Trait for objects that implements `AsyncRead` and `AsyncWrite`
@@ -126,6 +128,12 @@ mod connection_manager;
 #[cfg_attr(docsrs, doc(cfg(feature = "connection-manager")))]
 pub use connection_manager::*;
 mod runtime;
+#[cfg(feature = "async-std-comp")]
+pub use runtime::prefer_async_std;
+#[cfg(feature = "monoio-comp")]
+pub use runtime::prefer_monoio;
+#[cfg(feature = "tokio-comp")]
+pub use runtime::prefer_tokio;
 pub(super) use runtime::*;
 
 macro_rules! check_resp3 {

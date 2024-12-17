@@ -247,6 +247,11 @@ impl Client {
                 self.get_simple_async_connection::<crate::aio::async_std::AsyncStd>()
                     .await?
             }
+            #[cfg(feature = "monoio-comp")]
+            Runtime::MonoIo => {
+                self.get_simple_async_connection::<crate::aio::monoio::MonoIo>()
+                    .await?
+            }
         };
 
         crate::aio::Connection::new(&self.connection_info.redis, con).await
@@ -334,9 +339,16 @@ impl Client {
                     config, rt,
                 )
                 .await,
+
             #[cfg(feature = "async-std-comp")]
             rt @ Runtime::AsyncStd => self.get_multiplexed_async_connection_inner_with_timeout::<
                 crate::aio::async_std::AsyncStd,
+            >(config, rt)
+            .await,
+
+            #[cfg(feature = "monoio-comp")]
+            rt @ Runtime::MonoIo => self.get_multiplexed_async_connection_inner_with_timeout::<
+                crate::aio::monoio::MonoIo,
             >(config, rt)
             .await,
         }
@@ -818,6 +830,12 @@ impl Client {
             #[cfg(feature = "async-std-comp")]
             Runtime::AsyncStd => {
                 self.get_simple_async_connection::<crate::aio::async_std::AsyncStd>()
+                    .await?
+            }
+
+            #[cfg(feature = "monoio-comp")]
+            Runtime::MonoIo => {
+                self.get_simple_async_connection::<crate::aio::monoio::MonoIo>()
                     .await?
             }
         };
