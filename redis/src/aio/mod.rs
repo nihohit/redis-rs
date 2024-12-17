@@ -63,7 +63,7 @@ pub(crate) trait RedisRuntime: AsyncStream + Sized + 'static {
     const SUPPORTS_CROSS_THREAD_SPAWNING: bool;
 }
 
-macro_rules! spawn {
+macro_rules! spawn_by_type {
     ($runtime: ty, $action: expr) => {
         if <$runtime>::SUPPORTS_CROSS_THREAD_SPAWNING {
             <$runtime>::spawn_across_threads($action)
@@ -73,7 +73,22 @@ macro_rules! spawn {
     };
 }
 
-pub(crate) use spawn;
+macro_rules! dynamic_spawn {
+    ($runtime: expr, $action: expr) => {
+        match $runtime {
+            #[cfg(feature = "tokio-comp")]
+            Runtime::Tokio => crate::aio::tokio::Tokio::spawn_across_threads($action),
+
+            #[cfg(feature = "async-std-comp")]
+            Runtime::AsyncStd => crate::aio::async_std::AsyncStd::spawn_across_threads($action),
+
+            #[cfg(feature = "monoio-comp")]
+            Runtime::MonoIo => crate::aio::monoio::MonoIo::spawn_on_local_thread($action),
+        }
+    };
+}
+
+pub(crate) use {dynamic_spawn, spawn_by_type};
 
 /// Trait for objects that implements `AsyncRead` and `AsyncWrite`
 pub trait AsyncStream: AsyncRead + AsyncWrite {}

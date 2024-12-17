@@ -12,7 +12,7 @@ use std::{future::Future, net::SocketAddr};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub(crate) enum MonoIo {
-    Tcp(monoio::net::tcp::TcpStream),
+    Tcp(TcpStream),
 }
 
 async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<TcpStream> {
@@ -30,7 +30,6 @@ async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<TcpStream> {
     Ok(socket)
 }
 
-#[async_trait]
 impl RedisRuntime for MonoIo {
     async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<Self> {
         Ok(MonoIo::Tcp(connect_tcp(socket_addr).await?))
@@ -67,7 +66,7 @@ impl RedisRuntime for MonoIo {
 
     fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
         // in practice, this means that the deprecated `aio::Connection` can't be used with MonoIo.
-        panic!("Cannot use a Send + Sync connection with monoio")
+        unimplemented!("Cannot use a Send + Sync connection with monoio")
     }
 
     fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle {

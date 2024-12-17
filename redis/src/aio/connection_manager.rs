@@ -1,4 +1,5 @@
 use super::{AsyncPushSender, HandleContainer, RedisFuture};
+use crate::aio::RedisRuntime;
 use crate::{
     aio::{check_resp3, ConnectionLike, MultiplexedConnection, Runtime},
     cmd,
@@ -361,9 +362,10 @@ impl ConnectionManager {
         }
 
         let (oneshot_sender, oneshot_receiver) = oneshot::channel();
-        let _task_handle = HandleContainer::new(
-            runtime.spawn(Self::check_for_disconnect_pushes(oneshot_receiver)),
-        );
+        let _task_handle = HandleContainer::new(dynamic_spawn!(
+            runtime,
+            Self::check_for_disconnect_pushes(oneshot_receiver)
+        ));
 
         let mut components_for_reconnection_on_push = None;
         if let Some(push_sender) = config.push_sender.clone() {
@@ -472,7 +474,7 @@ impl ConnectionManager {
         // If the swap happened...
         if Arc::ptr_eq(&prev, &current) {
             // ...start the connection attempt immediately but do not wait on it.
-            self.0.runtime.spawn(new_connection.map(|_| ()));
+            dynamic_spawn!(self.0.runtime, new_connection.map(|_| ()));
         }
     }
 

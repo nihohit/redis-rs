@@ -1,4 +1,5 @@
-use crate::aio::Runtime;
+use crate::aio::RedisRuntime;
+use crate::aio::{dynamic_spawn, Runtime};
 use crate::connection::{
     check_connection_setup, connection_setup_pipeline, AuthResult, ConnectionSetupComponents,
 };
@@ -409,7 +410,7 @@ impl PubSub {
         setup_connection(&mut codec, connection_info).await?;
         let (sender, receiver) = unbounded_channel();
         let (sink, driver) = PubSubSink::new(codec, sender);
-        let handle = Runtime::locate().spawn(driver);
+        let handle = dynamic_spawn!(Runtime::locate(), driver);
         let _task_handle = Some(SharedHandleContainer::new(handle));
         let stream = PubSubStream {
             receiver,

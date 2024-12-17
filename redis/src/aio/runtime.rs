@@ -2,12 +2,6 @@ use std::{cell::RefCell, io, sync::Arc, time::Duration};
 
 use futures_util::Future;
 
-#[cfg(feature = "async-std-comp")]
-use super::async_std as crate_async_std;
-#[cfg(feature = "monoio-comp")]
-use super::monoio as crate_smol;
-#[cfg(feature = "tokio-comp")]
-use super::tokio as crate_tokio;
 use super::RedisRuntime;
 use crate::types::RedisError;
 
@@ -48,7 +42,9 @@ impl Drop for HandleContainer {
             Some(TaskHandle::AsyncStd(handle)) => {
                 // schedule for cancellation without waiting for result.
                 // TODO - can we cancel the task without awaiting its completion?
-                Runtime::locate().spawn(async move { handle.cancel().await.unwrap_or_default() });
+                dynamic_spawn!(Runtime::locate(), async move {
+                    handle.cancel().await.unwrap_or_default()
+                });
             }
             #[cfg(feature = "monoio-comp")]
             Some(TaskHandle::MonoIo(task)) => drop(task),

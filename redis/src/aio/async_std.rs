@@ -266,7 +266,7 @@ impl RedisRuntime for AsyncStd {
         }
     }
 
-    fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle {
+    fn spawn_on_local_thread(_f: impl Future<Output = ()> + 'static) -> TaskHandle {
         unimplemented!()
     }
 

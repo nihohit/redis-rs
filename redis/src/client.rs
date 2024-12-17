@@ -776,7 +776,7 @@ impl Client {
         let (mut connection, driver) = self
             .create_multiplexed_async_connection_inner::<T>(config)
             .await?;
-        let handle = crate::aio::spawn!(T, driver);
+        let handle = crate::aio::spawn_by_type!(T, driver);
         connection.set_task_handle(handle);
         Ok(connection)
     }
