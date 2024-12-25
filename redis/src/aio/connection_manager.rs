@@ -231,7 +231,7 @@ pub struct ConnectionManager(Arc<Internals>);
 type CloneableRedisResult<T> = Result<T, Arc<RedisError>>;
 
 /// Type alias for a shared boxed future that will resolve to a `CloneableRedisResult`.
-type SharedRedisFuture<T> = Shared<BoxFuture<'static, CloneableRedisResult<T>>>;
+type SharedRedisFuture<T> = Shared<LocalBoxFuture<'static, CloneableRedisResult<T>>>;
 
 /// Handle a command result. If the connection was dropped, reconnect.
 macro_rules! reconnect_if_dropped {
@@ -391,7 +391,7 @@ impl ConnectionManager {
 
         let new_self = Self(Arc::new(Internals {
             client,
-            connection: ArcSwap::from_pointee(future::ok(connection).boxed().shared()),
+            connection: ArcSwap::from_pointee(future::ok(connection).boxed_local().shared()),
             runtime,
             retry_strategy,
             connection_config,
@@ -461,7 +461,7 @@ impl ConnectionManager {
             .await?;
             Ok(con)
         }
-        .boxed()
+        .boxed_local()
         .shared();
 
         // Update the connection in the connection manager
@@ -614,7 +614,7 @@ impl ConnectionManager {
 
 impl ConnectionLike for ConnectionManager {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        (async move { self.send_packed_command(cmd).await }).boxed()
+        (async move { self.send_packed_command(cmd).await }).boxed_local()
     }
 
     fn req_packed_commands<'a>(
@@ -623,7 +623,7 @@ impl ConnectionLike for ConnectionManager {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        (async move { self.send_packed_commands(cmd, offset, count).await }).boxed()
+        (async move { self.send_packed_commands(cmd, offset, count).await }).boxed_local()
     }
 
     fn get_db(&self) -> i64 {
