@@ -249,11 +249,13 @@ impl RedisRuntime for AsyncStd {
             .map(|con| Self::Unix(AsyncStdWrapped::new(con)))?)
     }
 
-    fn spawn_across_threads(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
+    type BoxedFuture = Box<dyn Future<Output = ()> + Send + 'static>;
+
+    fn spawn(f: Self::BoxedFuture) -> TaskHandle {
         TaskHandle::AsyncStd(async_std::task::spawn(f))
     }
 
-    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
+    fn boxed(self) -> Pin<Self::BoxedFuture> {
         match self {
             AsyncStd::Tcp(x) => Box::pin(x),
             #[cfg(any(
@@ -265,10 +267,4 @@ impl RedisRuntime for AsyncStd {
             AsyncStd::Unix(x) => Box::pin(x),
         }
     }
-
-    fn spawn_on_local_thread(_f: impl Future<Output = ()> + 'static) -> TaskHandle {
-        unimplemented!()
-    }
-
-    const SUPPORTS_CROSS_THREAD_SPAWNING: bool = true;
 }

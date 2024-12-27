@@ -478,22 +478,24 @@ impl ConnectionManager {
         }
     }
 
-    async fn check_for_disconnect_pushes(
+    fn check_for_disconnect_pushes(
         receiver: oneshot::Receiver<(
             ConnectionManager,
             UnboundedReceiver<PushInfo>,
             Arc<dyn AsyncPushSender>,
         )>,
-    ) {
-        let Ok((this, mut internal_receiver, external_sender)) = receiver.await else {
-            return;
-        };
-        while let Some(push_info) = internal_receiver.recv().await {
-            if push_info.kind == PushKind::Disconnection {
-                this.reconnect(this.0.connection.load());
-            }
-            if external_sender.send(push_info).is_err() {
+    ) -> impl Future<Output = ()> + 'static {
+        async move {
+            let Ok((this, mut internal_receiver, external_sender)) = receiver.await else {
                 return;
+            };
+            while let Some(push_info) = internal_receiver.recv().await {
+                if push_info.kind == PushKind::Disconnection {
+                    this.reconnect(this.0.connection.load());
+                }
+                if external_sender.send(push_info).is_err() {
+                    return;
+                }
             }
         }
     }

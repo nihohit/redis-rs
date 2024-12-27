@@ -54,41 +54,12 @@ pub(crate) trait RedisRuntime: AsyncStream + Sized + 'static {
     #[cfg(unix)]
     async fn connect_unix(path: &Path) -> RedisResult<Self>;
 
-    fn spawn_across_threads(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle;
+    type BoxedFuture;
 
-    fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle;
+    fn spawn(f: Self::BoxedFuture) -> TaskHandle;
 
-    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>>;
-
-    const SUPPORTS_CROSS_THREAD_SPAWNING: bool;
+    fn boxed(self) -> Pin<Self::BoxedFuture>;
 }
-
-macro_rules! spawn_by_type {
-    ($runtime: ty, $action: expr) => {
-        if <$runtime>::SUPPORTS_CROSS_THREAD_SPAWNING {
-            <$runtime>::spawn_across_threads($action)
-        } else {
-            <$runtime>::spawn_on_local_thread($action)
-        }
-    };
-}
-
-macro_rules! dynamic_spawn {
-    ($runtime: expr, $action: expr) => {
-        match $runtime {
-            #[cfg(feature = "tokio-comp")]
-            Runtime::Tokio => crate::aio::tokio::Tokio::spawn_across_threads($action),
-
-            #[cfg(feature = "async-std-comp")]
-            Runtime::AsyncStd => crate::aio::async_std::AsyncStd::spawn_across_threads($action),
-
-            #[cfg(feature = "monoio-comp")]
-            Runtime::MonoIo => crate::aio::monoio::MonoIo::spawn_on_local_thread($action),
-        }
-    };
-}
-
-pub(crate) use {dynamic_spawn, spawn_by_type};
 
 /// Trait for objects that implements `AsyncRead` and `AsyncWrite`
 pub trait AsyncStream: AsyncRead + AsyncWrite {}

@@ -171,11 +171,13 @@ impl RedisRuntime for Tokio {
         Ok(UnixStreamTokio::connect(path).await.map(Tokio::Unix)?)
     }
 
-    fn spawn_across_threads(f: impl Future<Output = ()> + Send + 'static) -> TaskHandle {
+    type BoxedFuture = Box<dyn Future<Output = ()> + 'static>;
+
+    fn spawn(f: Self::BoxedFuture) -> TaskHandle {
         TaskHandle::Tokio(tokio::spawn(f))
     }
 
-    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
+    fn boxed(self) -> Pin<Self::BoxedFuture> {
         match self {
             Tokio::Tcp(x) => Box::pin(x),
             #[cfg(any(feature = "tokio-native-tls-comp", feature = "tokio-rustls-comp"))]
@@ -184,10 +186,4 @@ impl RedisRuntime for Tokio {
             Tokio::Unix(x) => Box::pin(x),
         }
     }
-
-    fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle {
-        TaskHandle::Tokio(tokio::task::spawn_local(f))
-    }
-
-    const SUPPORTS_CROSS_THREAD_SPAWNING: bool = true;
 }

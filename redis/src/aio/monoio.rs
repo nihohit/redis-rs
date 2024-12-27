@@ -59,20 +59,17 @@ impl RedisRuntime for MonoIo {
         todo!()
     }
 
-    fn spawn_across_threads(f: impl Future<Output = ()> + 'static) -> TaskHandle {
-        unimplemented!("monoio cannot spawn across threads")
-    }
+    type BoxedFuture = Box<dyn Future<Output = ()> + 'static>;
 
-    fn boxed(self) -> Pin<Box<dyn AsyncStream + Send + Sync>> {
-        // in practice, this means that the deprecated `aio::Connection` can't be used with MonoIo.
-        unimplemented!("Cannot use a Send + Sync connection with monoio")
-    }
-
-    fn spawn_on_local_thread(f: impl Future<Output = ()> + 'static) -> TaskHandle {
+    fn spawn(f: Self::BoxedFuture) -> TaskHandle {
         TaskHandle::MonoIo(monoio::spawn(f))
     }
 
-    const SUPPORTS_CROSS_THREAD_SPAWNING: bool = false;
+    fn boxed(self) -> Pin<Self::BoxedFuture> {
+        match self {
+            MonoIo::Tcp(tcp_stream) => Box::pin(tcp_stream),
+        }
+    }
 }
 
 impl AsyncWrite for MonoIo {

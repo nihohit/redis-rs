@@ -1,5 +1,5 @@
 use crate::aio::RedisRuntime;
-use crate::aio::{dynamic_spawn, Runtime};
+use crate::aio::Runtime;
 use crate::connection::{
     check_connection_setup, connection_setup_pipeline, AuthResult, ConnectionSetupComponents,
 };

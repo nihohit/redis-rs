@@ -269,7 +269,7 @@ impl Client {
         Ok(
             crate::aio::connect::<crate::aio::tokio::Tokio>(&self.connection_info)
                 .await?
-                .map(RedisRuntime::boxed),
+                .map(crate::aio::tokio::Tokio::boxed),
         )
     }
 
