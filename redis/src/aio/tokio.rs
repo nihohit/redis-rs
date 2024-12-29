@@ -171,13 +171,14 @@ impl RedisRuntime for Tokio {
         Ok(UnixStreamTokio::connect(path).await.map(Tokio::Unix)?)
     }
 
-    type BoxedFuture = Box<dyn Future<Output = ()> + 'static>;
+    type BoxedFuture = Box<dyn Future<Output = ()> + Send + 'static>;
+    type BoxedStream = Box<dyn AsyncStream + Send + Sync + 'static>;
 
     fn spawn(f: Self::BoxedFuture) -> TaskHandle {
         TaskHandle::Tokio(tokio::spawn(f))
     }
 
-    fn boxed(self) -> Pin<Self::BoxedFuture> {
+    fn boxed(self) -> Pin<Self::BoxedStream> {
         match self {
             Tokio::Tcp(x) => Box::pin(x),
             #[cfg(any(feature = "tokio-native-tls-comp", feature = "tokio-rustls-comp"))]

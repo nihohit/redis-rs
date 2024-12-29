@@ -250,12 +250,13 @@ impl RedisRuntime for AsyncStd {
     }
 
     type BoxedFuture = Box<dyn Future<Output = ()> + Send + 'static>;
+    type BoxedStream = Box<dyn AsyncStream + Send + Sync + 'static>;
 
     fn spawn(f: Self::BoxedFuture) -> TaskHandle {
         TaskHandle::AsyncStd(async_std::task::spawn(f))
     }
 
-    fn boxed(self) -> Pin<Self::BoxedFuture> {
+    fn boxed(self) -> Pin<BoxedStream> {
         match self {
             AsyncStd::Tcp(x) => Box::pin(x),
             #[cfg(any(

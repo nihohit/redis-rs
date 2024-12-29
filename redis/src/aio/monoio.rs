@@ -60,12 +60,13 @@ impl RedisRuntime for MonoIo {
     }
 
     type BoxedFuture = Box<dyn Future<Output = ()> + 'static>;
+    type BoxedStream = Box<dyn AsyncStream + 'static>;
 
     fn spawn(f: Self::BoxedFuture) -> TaskHandle {
         TaskHandle::MonoIo(monoio::spawn(f))
     }
 
-    fn boxed(self) -> Pin<Self::BoxedFuture> {
+    fn boxed(self) -> Pin<Self::BoxedStream> {
         match self {
             MonoIo::Tcp(tcp_stream) => Box::pin(tcp_stream),
         }

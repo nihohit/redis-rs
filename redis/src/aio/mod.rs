@@ -55,10 +55,11 @@ pub(crate) trait RedisRuntime: AsyncStream + Sized + 'static {
     async fn connect_unix(path: &Path) -> RedisResult<Self>;
 
     type BoxedFuture;
+    type BoxedStream;
 
     fn spawn(f: Self::BoxedFuture) -> TaskHandle;
 
-    fn boxed(self) -> Pin<Self::BoxedFuture>;
+    fn boxed(self) -> Pin<Self::BoxedStream>;
 }
 
 /// Trait for objects that implements `AsyncRead` and `AsyncWrite`

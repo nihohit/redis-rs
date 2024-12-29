@@ -236,6 +236,10 @@ impl Client {
     )]
     #[allow(deprecated)]
     pub async fn get_async_connection(&self) -> RedisResult<crate::aio::Connection> {
+        use std::intrinsics::mir::ReturnToArg;
+
+        use crate::RedisError;
+
         let con = match Runtime::locate() {
             #[cfg(feature = "tokio-comp")]
             Runtime::Tokio => {
@@ -249,8 +253,10 @@ impl Client {
             }
             #[cfg(feature = "monoio-comp")]
             Runtime::MonoIo => {
-                self.get_simple_async_connection::<crate::aio::monoio::MonoIo>()
-                    .await?
+                return Err(RedisError::from((
+                    crate::ErrorKind::InvalidClientConfig,
+                    "MonoIo runtime is not supported for deprecated aio::Connection",
+                )));
             }
         };
 
@@ -776,7 +782,7 @@ impl Client {
         let (mut connection, driver) = self
             .create_multiplexed_async_connection_inner::<T>(config)
             .await?;
-        let handle = crate::aio::spawn_by_type!(T, driver);
+        let handle = T::spawn(driver);
         connection.set_task_handle(handle);
         Ok(connection)
     }
@@ -800,9 +806,7 @@ impl Client {
         .await
     }
 
-    async fn get_simple_async_connection<T>(
-        &self,
-    ) -> RedisResult<Pin<Box<dyn crate::aio::AsyncStream + Send + Sync>>>
+    async fn get_simple_async_connection<T>(&self) -> RedisResult<Pin<T::BoxedStream>>
     where
         T: crate::aio::RedisRuntime,
     {
