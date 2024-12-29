@@ -11,7 +11,59 @@ use std::{future::Future, net::SocketAddr};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub(crate) enum MonoIo {
-    Tcp(TcpStream),
+    Tcp(MonoIoWrapped<TcpStream>),
+}
+
+pin_project_lite::pin_project! {
+    /// Wraps the async_std `AsyncRead/AsyncWrite` in order to implement the required the tokio traits
+    /// for it
+    pub struct MonoIoWrapped<T> {  #[pin] inner: T }
+}
+
+impl<T> MonoIoWrapped<T> {
+    pub(super) fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T> AsyncWrite for MonoIoWrapped<T>
+where
+    T: monoio::Driver,
+{
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut core::task::Context,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, tokio::io::Error>> {
+        self.project().inner.poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut core::task::Context,
+    ) -> std::task::Poll<Result<(), tokio::io::Error>> {
+        self.project().inner.poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut core::task::Context,
+    ) -> std::task::Poll<Result<(), tokio::io::Error>> {
+        self.project().inner.poll_shutdown(cx)
+    }
+}
+
+impl<T> AsyncRead for MonoIoWrapped<T>
+where
+    T: monoio::Driver,
+{
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut core::task::Context,
+        buf: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<Result<(), tokio::io::Error>> {
+        self.project().inner.poll_read(cx, buf)
+    }
 }
 
 async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<TcpStream> {
@@ -31,7 +83,9 @@ async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<TcpStream> {
 
 impl RedisRuntime for MonoIo {
     async fn connect_tcp(socket_addr: SocketAddr) -> RedisResult<Self> {
-        Ok(MonoIo::Tcp(connect_tcp(socket_addr).await?))
+        Ok(MonoIo::Tcp(MonoIoWrapped::new(
+            connect_tcp(socket_addr).await?,
+        )))
     }
 
     #[cfg(all(feature = "tls-native-tls", not(feature = "tls-rustls")))]

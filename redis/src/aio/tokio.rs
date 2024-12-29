@@ -2,7 +2,7 @@ use super::{AsyncStream, RedisResult, RedisRuntime, SocketAddr, TaskHandle};
 use std::{
     future::Future,
     io,
-    pin::Pin,
+    pin::{pin, Pin},
     task::{self, Poll},
 };
 #[cfg(unix)]
@@ -175,7 +175,7 @@ impl RedisRuntime for Tokio {
     type BoxedStream = Box<dyn AsyncStream + Send + Sync + 'static>;
 
     fn spawn(f: Self::BoxedFuture) -> TaskHandle {
-        TaskHandle::Tokio(tokio::spawn(f))
+        TaskHandle::Tokio(tokio::spawn(pin!(f)))
     }
 
     fn boxed(self) -> Pin<Self::BoxedStream> {

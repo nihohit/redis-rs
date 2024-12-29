@@ -236,8 +236,6 @@ impl Client {
     )]
     #[allow(deprecated)]
     pub async fn get_async_connection(&self) -> RedisResult<crate::aio::Connection> {
-        use std::intrinsics::mir::ReturnToArg;
-
         use crate::RedisError;
 
         let con = match Runtime::locate() {
