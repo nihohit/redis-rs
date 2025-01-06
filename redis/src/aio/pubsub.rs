@@ -410,7 +410,16 @@ impl PubSub {
         setup_connection(&mut codec, connection_info).await?;
         let (sender, receiver) = unbounded_channel();
         let (sink, driver) = PubSubSink::new(codec, sender);
-        let handle = dynamic_spawn!(Runtime::locate(), driver);
+        let handle = match Runtime::locate() {
+            #[cfg(feature = "tokio-comp")]
+            Runtime::Tokio => crate::aio::tokio::Tokio::spawn(Box::new(driver)),
+
+            #[cfg(feature = "async-std-comp")]
+            Runtime::AsyncStd => crate::aio::async_std::AsyncStd::spawn(driver),
+
+            #[cfg(feature = "monoio-comp")]
+            Runtime::MonoIo => crate::aio::monoio::MonoIo::spawn(driver),
+        };
         let _task_handle = Some(SharedHandleContainer::new(handle));
         let stream = PubSubStream {
             receiver,

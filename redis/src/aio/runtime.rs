@@ -2,7 +2,6 @@ use std::{cell::RefCell, io, sync::Arc, time::Duration};
 
 use futures_util::Future;
 
-use super::RedisRuntime;
 use crate::types::RedisError;
 
 #[derive(Clone, Debug, Copy)]
@@ -105,7 +104,7 @@ impl Runtime {
             not(feature = "async-std-comp")
         ))]
         {
-            Runtime::Tokio
+            return Runtime::Tokio;
         }
 
         #[cfg(all(
@@ -114,7 +113,7 @@ impl Runtime {
             feature = "async-std-comp"
         ))]
         {
-            Runtime::AsyncStd
+            return Runtime::AsyncStd;
         }
 
         #[cfg(all(
@@ -123,7 +122,7 @@ impl Runtime {
             not(feature = "async-std-comp")
         ))]
         {
-            Runtime::MonoIo
+            return Runtime::MonoIo;
         }
 
         // Is this a real-world scenario? Who, besides our test case, compile with multiple runtime support?

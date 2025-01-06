@@ -236,8 +236,6 @@ impl Client {
     )]
     #[allow(deprecated)]
     pub async fn get_async_connection(&self) -> RedisResult<crate::aio::Connection> {
-        use crate::RedisError;
-
         let con = match Runtime::locate() {
             #[cfg(feature = "tokio-comp")]
             Runtime::Tokio => {
@@ -788,10 +786,7 @@ impl Client {
     async fn create_multiplexed_async_connection_inner<T>(
         &self,
         config: &AsyncConnectionConfig,
-    ) -> RedisResult<(
-        crate::aio::MultiplexedConnection,
-        impl std::future::Future<Output = ()>,
-    )>
+    ) -> RedisResult<(crate::aio::MultiplexedConnection, T::BoxedFuture)>
     where
         T: crate::aio::RedisRuntime,
     {

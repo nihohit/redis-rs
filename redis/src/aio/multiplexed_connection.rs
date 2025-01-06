@@ -1,4 +1,6 @@
-use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
+use super::{
+    AsyncPushSender, ConnectionLike, RedisRuntime, Runtime, SharedHandleContainer, TaskHandle,
+};
 use crate::aio::{check_resp3, setup_connection};
 use crate::cmd::Cmd;
 #[cfg(any(feature = "tokio-comp", feature = "async-std-comp"))]
@@ -444,7 +446,7 @@ impl MultiplexedConnection {
         response_timeout: Option<std::time::Duration>,
     ) -> RedisResult<(Self, impl Future<Output = ()>)>
     where
-        C: Unpin + AsyncRead + AsyncWrite + Send + 'static,
+        C: Unpin + AsyncRead + AsyncWrite + 'static,
     {
         Self::new_with_config(
             connection_info,
@@ -460,13 +462,14 @@ impl MultiplexedConnection {
 
     /// Constructs a new `MultiplexedConnection` out of a `AsyncRead + AsyncWrite` object
     /// , a `RedisConnectionInfo` and a `AsyncConnectionConfig`.
-    pub async fn new_with_config<C>(
+    pub async fn new_with_config<C, T>(
         connection_info: &RedisConnectionInfo,
         stream: C,
         config: AsyncConnectionConfig,
-    ) -> RedisResult<(Self, impl Future<Output = ()>)>
+    ) -> RedisResult<(Self, T::BoxedFuture)>
     where
-        C: Unpin + AsyncRead + AsyncWrite + Send + 'static,
+        C: Unpin + AsyncRead + AsyncWrite + 'static,
+        T: RedisRuntime,
     {
         #[cfg(all(not(feature = "tokio-comp"), not(feature = "async-std-comp")))]
         compile_error!("tokio-comp or async-std-comp features required for aio feature");
