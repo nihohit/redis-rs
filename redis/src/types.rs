@@ -573,10 +573,7 @@ impl From<RedisProtocolError> for RedisError {
             redis_protocol::error::RedisProtocolErrorKind::EncodeError => todo!(),
             redis_protocol::error::RedisProtocolErrorKind::BufferTooSmall(_) => todo!(),
             redis_protocol::error::RedisProtocolErrorKind::DecodeError => todo!(),
-            redis_protocol::error::RedisProtocolErrorKind::IO(error) => {
-                let error: std::io::Error = (*error).clone();
-                RedisError::from(error)
-            }
+            redis_protocol::error::RedisProtocolErrorKind::IO(_error) => todo!(),
             redis_protocol::error::RedisProtocolErrorKind::Unknown => todo!(),
             redis_protocol::error::RedisProtocolErrorKind::Parse => {
                 RedisError::from((ErrorKind::ParseError, value.details()))
@@ -682,9 +679,9 @@ impl TryFrom<BytesFrame> for Value {
                 Value::Push { kind, data }.with_attribute(attributes)
             }
             BytesFrame::Hello {
-                version,
-                auth,
-                setname,
+                version: _,
+                auth: _,
+                setname: _,
             } => todo!(),
             BytesFrame::ChunkedString(_) => todo!(),
         }
