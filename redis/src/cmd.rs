@@ -8,7 +8,7 @@ use futures_util::{
 use std::pin::Pin;
 #[cfg(feature = "cache-aio")]
 use std::time::Duration;
-use std::{fmt, io};
+use std::{fmt, io::Write, ops::Range};
 
 use crate::pipeline::Pipeline;
 use crate::types::{from_owned_redis_value, FromRedisValue, RedisResult, RedisWrite, ToRedisArgs};
@@ -78,7 +78,7 @@ impl Default for CommandCacheConfig {
 pub struct Cmd {
     pub(crate) data: Vec<u8>,
     // Arg::Simple contains the offset that marks the end of the argument
-    args: Vec<Arg<usize>>,
+    args: Vec<Arg<Range<usize>>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
@@ -315,7 +315,11 @@ where
     write_command(cmd, args, cursor).unwrap()
 }
 
-fn write_command<'a, I>(cmd: &mut (impl ?Sized + io::Write), args: I, cursor: u64) -> io::Result<()>
+fn write_command<'a, I>(
+    cmd: &mut (impl ?Sized + Write),
+    args: I,
+    cursor: u64,
+) -> std::io::Result<()>
 where
     I: IntoIterator<Item = Arg<&'a [u8]>> + Clone + ExactSizeIterator,
 {
@@ -346,26 +350,30 @@ where
 
 impl RedisWrite for Cmd {
     fn write_arg(&mut self, arg: &[u8]) {
+        let start = self.data.len();
         self.data.extend_from_slice(arg);
-        self.args.push(Arg::Simple(self.data.len()));
+        self.args.push(Arg::Simple(start..self.data.len()));
     }
 
     fn write_arg_fmt(&mut self, arg: impl fmt::Display) {
-        use std::io::Write;
+        let start = self.data.len();
         write!(self.data, "{arg}").unwrap();
-        self.args.push(Arg::Simple(self.data.len()));
+        self.args.push(Arg::Simple(start..self.data.len()));
     }
 
-    fn writer_for_next_arg(&mut self) -> impl std::io::Write + '_ {
-        struct CmdBufferedArgGuard<'a>(&'a mut Cmd);
+    fn writer_for_next_arg(&mut self) -> impl Write + '_ {
+        struct CmdBufferedArgGuard<'a>((&'a mut Cmd, usize));
         impl Drop for CmdBufferedArgGuard<'_> {
             fn drop(&mut self) {
-                self.0.args.push(Arg::Simple(self.0.data.len()));
+                self.0
+                     .0
+                    .args
+                    .push(Arg::Simple(self.0 .1..self.0 .0.data.len()));
             }
         }
-        impl std::io::Write for CmdBufferedArgGuard<'_> {
+        impl Write for CmdBufferedArgGuard<'_> {
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.0.data.extend_from_slice(buf);
+                self.0 .0.data.extend_from_slice(buf);
                 Ok(buf.len())
             }
 
@@ -374,7 +382,8 @@ impl RedisWrite for Cmd {
             }
         }
 
-        CmdBufferedArgGuard(self)
+        let start = self.data.len();
+        CmdBufferedArgGuard((self, start))
     }
 
     fn reserve_space_for_args(&mut self, additional: impl IntoIterator<Item = usize>) {
@@ -391,23 +400,26 @@ impl RedisWrite for Cmd {
     #[cfg(feature = "bytes")]
     fn bufmut_for_next_arg(&mut self, capacity: usize) -> impl bytes::BufMut + '_ {
         self.data.reserve(capacity);
-        struct CmdBufferedArgGuard<'a>(&'a mut Cmd);
+        struct CmdBufferedArgGuard<'a>((&'a mut Cmd, usize));
         impl Drop for CmdBufferedArgGuard<'_> {
             fn drop(&mut self) {
-                self.0.args.push(Arg::Simple(self.0.data.len()));
+                self.0
+                     .0
+                    .args
+                    .push(Arg::Simple(self.0 .1..self.0 .0.data.len()));
             }
         }
         unsafe impl bytes::BufMut for CmdBufferedArgGuard<'_> {
             fn remaining_mut(&self) -> usize {
-                self.0.data.remaining_mut()
+                self.0 .0.data.remaining_mut()
             }
 
             unsafe fn advance_mut(&mut self, cnt: usize) {
-                self.0.data.advance_mut(cnt);
+                self.0 .0.data.advance_mut(cnt);
             }
 
             fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
-                self.0.data.chunk_mut()
+                self.0 .0.data.chunk_mut()
             }
 
             // Vec specializes these methods, so we do too
@@ -415,19 +427,20 @@ impl RedisWrite for Cmd {
             where
                 Self: Sized,
             {
-                self.0.data.put(src);
+                self.0 .0.data.put(src);
             }
 
             fn put_slice(&mut self, src: &[u8]) {
-                self.0.data.put_slice(src);
+                self.0 .0.data.put_slice(src);
             }
 
             fn put_bytes(&mut self, val: u8, cnt: usize) {
-                self.0.data.put_bytes(val, cnt);
+                self.0 .0.data.put_bytes(val, cnt);
             }
         }
 
-        CmdBufferedArgGuard(self)
+        let start = self.data.len();
+        CmdBufferedArgGuard((self, start))
     }
 }
 
@@ -728,13 +741,8 @@ impl Cmd {
 
     /// Returns an iterator over the arguments in this command (including the command name itself)
     pub fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
-        let mut prev = 0;
-        self.args.iter().map(move |arg| match *arg {
-            Arg::Simple(i) => {
-                let arg = Arg::Simple(&self.data[prev..i]);
-                prev = i;
-                arg
-            }
+        self.args.iter().map(move |arg| match arg {
+            Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
 
             Arg::Cursor => Arg::Cursor,
         })
@@ -747,22 +755,10 @@ impl Cmd {
             return None;
         }
 
-        let start = if idx == 0 {
-            0
-        } else {
-            match self.args[idx - 1] {
-                Arg::Simple(n) => n,
-                _ => 0,
-            }
-        };
-        let end = match self.args[idx] {
-            Arg::Simple(n) => n,
-            _ => 0,
-        };
-        if start == 0 && end == 0 {
-            return None;
+        match &self.args[idx] {
+            Arg::Simple(range) => Some(&self.data[range.start..range.end]),
+            _ => None,
         }
-        Some(&self.data[start..end])
     }
 
     /// Client won't read and wait for results. Currently only used for Pub/Sub commands in RESP3.
@@ -837,12 +833,9 @@ pub fn pipe() -> Pipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::Cmd;
+    use super::*;
     #[cfg(feature = "bytes")]
     use bytes::BufMut;
-
-    use crate::RedisWrite;
-    use std::io::Write;
 
     #[test]
     fn test_cmd_clean() {
