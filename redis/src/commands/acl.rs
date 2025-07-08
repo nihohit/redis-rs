@@ -78,21 +78,23 @@ impl ToRedisArgs for Rule {
             On => out.write_arg(b"on"),
             Off => out.write_arg(b"off"),
 
-            AddCommand(cmd) => out.write_arg_fmt(format_args!("+{cmd}")),
-            RemoveCommand(cmd) => out.write_arg_fmt(format_args!("-{cmd}")),
-            AddCategory(cat) => out.write_arg_fmt(format_args!("+@{cat}")),
-            RemoveCategory(cat) => out.write_arg_fmt(format_args!("-@{cat}")),
+            AddCommand(cmd) => out.write_arg_fmt(format_args!("+{cmd}"), Some(cmd.len() + 1)),
+            RemoveCommand(cmd) => out.write_arg_fmt(format_args!("-{cmd}"), Some(cmd.len() + 1)),
+            AddCategory(cat) => out.write_arg_fmt(format_args!("+@{cat}"), Some(cat.len() + 1)),
+            RemoveCategory(cat) => out.write_arg_fmt(format_args!("-@{cat}"), Some(cat.len() + 1)),
             AllCommands => out.write_arg(b"allcommands"),
             NoCommands => out.write_arg(b"nocommands"),
 
-            AddPass(pass) => out.write_arg_fmt(format_args!(">{pass}")),
-            RemovePass(pass) => out.write_arg_fmt(format_args!("<{pass}")),
-            AddHashedPass(pass) => out.write_arg_fmt(format_args!("#{pass}")),
-            RemoveHashedPass(pass) => out.write_arg_fmt(format_args!("!{pass}")),
+            AddPass(pass) => out.write_arg_fmt(format_args!(">{pass}"), Some(pass.len() + 1)),
+            RemovePass(pass) => out.write_arg_fmt(format_args!("<{pass}"), Some(pass.len() + 1)),
+            AddHashedPass(pass) => out.write_arg_fmt(format_args!("#{pass}"), Some(pass.len() + 1)),
+            RemoveHashedPass(pass) => {
+                out.write_arg_fmt(format_args!("!{pass}"), Some(pass.len() + 1))
+            }
             NoPass => out.write_arg(b"nopass"),
             ResetPass => out.write_arg(b"resetpass"),
 
-            Pattern(pat) => out.write_arg_fmt(format_args!("~{pat}")),
+            Pattern(pat) => out.write_arg_fmt(format_args!("~{pat}"), Some(pat.len() + 1)),
             AllKeys => out.write_arg(b"allkeys"),
             ResetKeys => out.write_arg(b"resetkeys"),
 

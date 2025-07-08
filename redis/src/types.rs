@@ -697,19 +697,26 @@ pub trait RedisWrite {
     fn write_arg(&mut self, arg: &[u8]);
 
     /// Accepts a serialized redis command.
-    fn write_arg_fmt(&mut self, arg: impl fmt::Display) {
+    ///
+    /// Pass `known_size` with the size of the display representation of `arg` in bytes as an optimization.
+    /// Pass `None` if the value isn't known precisely, since setting the wrong size will probably break communication with the server.
+    fn write_arg_fmt(&mut self, arg: impl fmt::Display, known_size: Option<usize>) {
+        let _do_nothing = known_size;
         self.write_arg(arg.to_string().as_bytes())
     }
 
     /// Appends an empty argument to the command, and returns a
     /// [`std::io::Write`] instance that can write to it.
     ///
+    /// Pass `known_size` with the size of the display representation of `arg` in bytes as an optimization.
+    /// Pass `None` if the value isn't known precisely, since setting the wrong size will probably break communication with the server.
+    ///
     /// Writing multiple arguments into this buffer is unsupported. The resulting
     /// data will be interpreted as one argument by Redis.
     ///
     /// Writing no data is supported and is similar to having an empty bytestring
     /// as an argument.
-    fn writer_for_next_arg(&mut self) -> impl io::Write + '_;
+    fn writer_for_next_arg(&mut self, known_size: Option<usize>) -> impl std::io::Write + '_;
 
     /// Reserve space for `additional` arguments in the command
     ///
@@ -754,14 +761,20 @@ pub trait RedisWrite {
     ///
     /// `capacity` should be equal or greater to the amount of bytes
     /// expected, as some implementations might not be able to resize
-    /// the returned buffer.
+    /// the returned buffer. If `capacity` is precisely the size of the written arg, pass `true` to `is_precise`.
+    /// If `capacity` might be an overestimate, pass `false` to `is_precise`.
     ///
     /// Writing multiple arguments into this buffer is unsupported. The resulting
     /// data will be interpreted as one argument by Redis.
     ///
     /// Writing no data is supported and is similar to having an empty bytestring
     /// as an argument.
-    fn bufmut_for_next_arg(&mut self, capacity: usize) -> impl bytes::BufMut + '_ {
+    fn bufmut_for_next_arg(
+        &mut self,
+        capacity: usize,
+        is_precise: bool,
+    ) -> impl bytes::BufMut + '_ {
+        let _do_nothing = is_precise;
         // This default implementation is not the most efficient, but does
         // allow for implementers to skip this function. This means that
         // upstream libraries that implement this trait don't suddenly
@@ -812,7 +825,7 @@ pub trait RedisWrite {
 
         Wrapper {
             buf: Vec::with_capacity(capacity),
-            writer: Box::new(self.writer_for_next_arg()),
+            writer: Box::new(self.writer_for_next_arg(None)),
         }
     }
 }
@@ -822,12 +835,17 @@ impl RedisWrite for Vec<Vec<u8>> {
         self.push(arg.to_owned());
     }
 
-    fn write_arg_fmt(&mut self, arg: impl fmt::Display) {
+    fn write_arg_fmt(&mut self, arg: impl fmt::Display, _known_size: Option<usize>) {
         self.push(arg.to_string().into_bytes())
     }
 
-    fn writer_for_next_arg(&mut self) -> impl io::Write + '_ {
-        self.push(Vec::new());
+    fn writer_for_next_arg(&mut self, known_size: Option<usize>) -> impl std::io::Write + '_ {
+        let vec = if let Some(known_size) = known_size {
+            Vec::with_capacity(known_size)
+        } else {
+            Vec::new()
+        };
+        self.push(vec);
         self.last_mut().unwrap()
     }
 
@@ -840,7 +858,11 @@ impl RedisWrite for Vec<Vec<u8>> {
     }
 
     #[cfg(feature = "bytes")]
-    fn bufmut_for_next_arg(&mut self, capacity: usize) -> impl bytes::BufMut + '_ {
+    fn bufmut_for_next_arg(
+        &mut self,
+        capacity: usize,
+        _is_precise: bool,
+    ) -> impl bytes::BufMut + '_ {
         self.push(Vec::with_capacity(capacity));
         self.last_mut().unwrap()
     }

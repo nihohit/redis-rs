@@ -116,16 +116,16 @@ impl CacheManager {
 
     fn prepare_key_buffer(
         &self,
-        buffer: &mut Vec<u8>,
+        buffer: &mut Cmd,
         single_command_name: &[u8],
         redis_key: &[u8],
         json_path_key: Option<&[u8]>,
     ) {
         buffer.clear();
-        buffer.extend_from_slice(single_command_name);
-        buffer.extend_from_slice(redis_key);
+        buffer.arg(single_command_name);
+        buffer.arg(redis_key);
         if let Some(json_path_key) = json_path_key {
-            buffer.extend_from_slice(json_path_key);
+            buffer.arg(json_path_key);
         }
     }
 
@@ -152,7 +152,7 @@ impl CacheManager {
         let json_path_key = is_json_command
             .then(|| arguments.pop().inspect(|k| tail_args.push(k)))
             .flatten();
-        let mut key_test_buffer: Vec<u8> = Vec::new();
+        let mut key_test_buffer: Cmd = Cmd::new();
 
         for (i, redis_key) in arguments.iter().enumerate() {
             self.prepare_key_buffer(
@@ -162,7 +162,7 @@ impl CacheManager {
                 json_path_key,
             );
 
-            match self.get(redis_key, &key_test_buffer) {
+            match self.get(redis_key, &key_test_buffer.data) {
                 Some(value) => response.push(value),
                 None => {
                     response.push(Value::Nil);
@@ -170,7 +170,7 @@ impl CacheManager {
                         i,
                         MultipleCachedCommandPart {
                             redis_key,
-                            cmd_key: key_test_buffer.clone(),
+                            cmd_key: key_test_buffer.data.clone(),
                         },
                     ));
                 }

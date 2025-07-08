@@ -1,6 +1,6 @@
 //! Defines types to use with the vector sets commands.
 
-use crate::{RedisWrite, ToRedisArgs};
+use crate::{cmd::count_digits, RedisWrite, ToRedisArgs};
 
 /// Options for the VSIM command
 ///
@@ -100,12 +100,12 @@ impl ToRedisArgs for VSimOptions {
 
         if let Some(count) = self.count {
             out.write_arg(b"COUNT");
-            out.write_arg_fmt(count);
+            out.write_arg_fmt(count, Some(count_digits(count)));
         }
 
         if let Some(ef) = self.search_exploration_factor {
             out.write_arg(b"EF");
-            out.write_arg_fmt(ef);
+            out.write_arg_fmt(ef, Some(count_digits(ef)));
         }
 
         if let Some(ref filter) = self.filter {
@@ -115,7 +115,7 @@ impl ToRedisArgs for VSimOptions {
 
         if let Some(filter_ef) = self.filter_max_effort {
             out.write_arg(b"FILTER-EF");
-            out.write_arg_fmt(filter_ef);
+            out.write_arg_fmt(filter_ef, Some(count_digits(filter_ef)));
         }
 
         if self.truth {
@@ -150,19 +150,19 @@ impl<'a> ToRedisArgs for EmbeddingInput<'a> {
     {
         match self {
             EmbeddingInput::Float32(vector) => {
-                out.write_arg_fmt(vector.len());
+                out.write_arg_fmt(vector.len(), Some(count_digits(vector.len())));
                 for &f in *vector {
-                    out.write_arg_fmt(f);
+                    f.write_redis_args(out);
                 }
             }
             EmbeddingInput::Float64(vector) => {
-                out.write_arg_fmt(vector.len());
+                out.write_arg_fmt(vector.len(), Some(count_digits(vector.len())));
                 for &f in *vector {
-                    out.write_arg_fmt(f);
+                    f.write_redis_args(out);
                 }
             }
             EmbeddingInput::String(vector) => {
-                out.write_arg_fmt(vector.len());
+                out.write_arg_fmt(vector.len(), Some(count_digits(vector.len())));
                 for v in *vector {
                     v.write_redis_args(out);
                 }
@@ -189,7 +189,7 @@ impl<'a> ToRedisArgs for VectorAddInput<'a> {
             VectorAddInput::Fp32(vector) => {
                 use std::io::Write;
                 out.write_arg(b"FP32");
-                let mut writer = out.writer_for_next_arg();
+                let mut writer = out.writer_for_next_arg(Some(std::mem::size_of_val(*vector)));
                 for &f in *vector {
                     writer.write_all(&f.to_le_bytes()).unwrap();
                 }
@@ -313,7 +313,7 @@ impl ToRedisArgs for VAddOptions {
 
         if let Some(exploration_factor) = self.build_exploration_factor {
             out.write_arg(b"EF");
-            out.write_arg_fmt(exploration_factor);
+            out.write_arg_fmt(exploration_factor, Some(count_digits(exploration_factor)));
         }
 
         if let Some(ref attrs) = self.attributes {
@@ -323,7 +323,7 @@ impl ToRedisArgs for VAddOptions {
 
         if let Some(max_links) = self.max_number_of_links {
             out.write_arg(b"M");
-            out.write_arg_fmt(max_links);
+            out.write_arg_fmt(max_links, Some(count_digits(max_links)));
         }
     }
 }
@@ -388,7 +388,7 @@ impl<'a> ToRedisArgs for VectorSimilaritySearchInput<'a> {
             VectorSimilaritySearchInput::Fp32(vector) => {
                 use std::io::Write;
                 out.write_arg(b"FP32");
-                let mut writer = out.writer_for_next_arg();
+                let mut writer = out.writer_for_next_arg(Some(vector.len() * 4));
                 for &f in *vector {
                     writer.write_all(&f.to_le_bytes()).unwrap();
                 }

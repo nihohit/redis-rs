@@ -1,6 +1,6 @@
 #![allow(unused_parens)]
 
-use crate::cmd::{cmd, Cmd, Iter};
+use crate::cmd::{cmd, count_digits, Cmd, Iter};
 use crate::connection::{Connection, ConnectionLike, Msg};
 use crate::pipeline::Pipeline;
 use crate::types::{
@@ -3066,17 +3066,17 @@ impl ToRedisArgs for ScanOptions {
     {
         if let Some(p) = &self.pattern {
             out.write_arg(b"MATCH");
-            out.write_arg_fmt(p);
+            out.write_arg(p.as_bytes());
         }
 
         if let Some(n) = self.count {
             out.write_arg(b"COUNT");
-            out.write_arg_fmt(n);
+            out.write_arg_fmt(n, Some(count_digits(n)));
         }
 
         if let Some(t) = &self.scan_type {
             out.write_arg(b"TYPE");
-            out.write_arg_fmt(t);
+            out.write_arg(t.as_bytes());
         }
     }
 
@@ -3150,17 +3150,22 @@ impl ToRedisArgs for LposOptions {
     {
         if let Some(n) = self.count {
             out.write_arg(b"COUNT");
-            out.write_arg_fmt(n);
+            out.write_arg_fmt(n, Some(count_digits(n)));
         }
 
         if let Some(n) = self.rank {
             out.write_arg(b"RANK");
-            out.write_arg_fmt(n);
+            let digit_count = if n.is_positive() {
+                count_digits(n as usize)
+            } else {
+                count_digits(n.unsigned_abs()) + 1
+            };
+            out.write_arg_fmt(n, Some(digit_count));
         }
 
         if let Some(n) = self.maxlen {
             out.write_arg(b"MAXLEN");
-            out.write_arg_fmt(n);
+            out.write_arg_fmt(n, Some(count_digits(n)));
         }
     }
 

@@ -77,11 +77,13 @@ impl Default for CommandCacheConfig {
 #[derive(Clone)]
 pub struct Cmd {
     pub(crate) data: Vec<u8>,
-    // Arg::Simple contains the offset that marks the end of the argument
+    // Arg::Simple contains the range for each argument
     args: Vec<Arg<Range<usize>>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
+    // If set to true, the cmd is currently buffering data, and can't use the fully set data
+    buffering: bool,
     #[cfg(feature = "cache-aio")]
     cache: Option<CommandCacheConfig>,
 }
@@ -251,7 +253,7 @@ impl<'a, T: FromRedisValue + Unpin + Send + 'a> Stream for AsyncIter<'a, T> {
     }
 }
 
-fn count_digits(mut v: usize) -> usize {
+pub(crate) const fn count_digits(mut v: usize) -> usize {
     let mut result = 1;
     loop {
         if v < 10 {
@@ -273,8 +275,8 @@ fn count_digits(mut v: usize) -> usize {
 }
 
 #[inline]
-fn bulk_len(len: usize) -> usize {
-    1 + count_digits(len) + 2 + len + 2
+pub(crate) const fn bulk_len(len: usize) -> usize {
+    1 + count_digits(len) + 2 + len + 2 //b"$" + length + b"\r\n" + content + b"\r\n"
 }
 
 fn args_len<'a, I>(args: I, cursor: u64) -> usize
@@ -300,11 +302,11 @@ where
     I: IntoIterator<Item = Arg<&'a [u8]>> + Clone + ExactSizeIterator,
 {
     let mut cmd = Vec::new();
-    write_command_to_vec(&mut cmd, args, cursor);
+    reserve_and_write_command(&mut cmd, args, cursor);
     cmd
 }
 
-fn write_command_to_vec<'a, I>(cmd: &mut Vec<u8>, args: I, cursor: u64)
+fn reserve_and_write_command<'a, I>(cmd: &mut Vec<u8>, args: I, cursor: u64)
 where
     I: IntoIterator<Item = Arg<&'a [u8]>> + Clone + ExactSizeIterator,
 {
@@ -315,6 +317,21 @@ where
     write_command(cmd, args, cursor).unwrap()
 }
 
+fn write_number(dst: &mut (impl ?Sized + Write), len: usize, marker: &[u8]) -> std::io::Result<()> {
+    dst.write_all(marker)?;
+    let mut buffer = itoa::Buffer::new();
+    dst.write_all(buffer.format(len).as_bytes())?;
+    dst.write_all(b"\r\n")
+}
+
+fn write_count(dst: &mut (impl ?Sized + Write), count: usize) -> std::io::Result<()> {
+    write_number(dst, count, b"*")
+}
+
+fn write_length(dst: &mut (impl ?Sized + Write), len: usize) -> std::io::Result<()> {
+    write_number(dst, len, b"$")
+}
+
 fn write_command<'a, I>(
     cmd: &mut (impl ?Sized + Write),
     args: I,
@@ -323,12 +340,7 @@ fn write_command<'a, I>(
 where
     I: IntoIterator<Item = Arg<&'a [u8]>> + Clone + ExactSizeIterator,
 {
-    let mut buf = ::itoa::Buffer::new();
-
-    cmd.write_all(b"*")?;
-    let s = buf.format(args.len());
-    cmd.write_all(s.as_bytes())?;
-    cmd.write_all(b"\r\n")?;
+    write_count(cmd, args.len())?;
 
     let mut cursor_bytes = itoa::Buffer::new();
     for item in args {
@@ -337,10 +349,7 @@ where
             Arg::Simple(val) => val,
         };
 
-        cmd.write_all(b"$")?;
-        let s = buf.format(bytes.len());
-        cmd.write_all(s.as_bytes())?;
-        cmd.write_all(b"\r\n")?;
+        write_length(cmd, bytes.len())?;
 
         cmd.write_all(bytes)?;
         cmd.write_all(b"\r\n")?;
@@ -348,42 +357,103 @@ where
     Ok(())
 }
 
+struct CmdBufferedArgGuard<'a> {
+    cmd: &'a mut Cmd,
+    start: usize,
+    is_precise: bool,
+}
+
+impl Drop for CmdBufferedArgGuard<'_> {
+    fn drop(&mut self) {
+        self.cmd
+            .args
+            .push(Arg::Simple(self.start..self.cmd.data.len()));
+        if self.is_precise {
+            self.cmd.data.extend_from_slice(b"\r\n");
+            self.cmd.buffering = false;
+        }
+    }
+}
+
+#[cfg(feature = "bytes")]
+unsafe impl bytes::BufMut for CmdBufferedArgGuard<'_> {
+    fn remaining_mut(&self) -> usize {
+        self.cmd.data.remaining_mut()
+    }
+
+    unsafe fn advance_mut(&mut self, cnt: usize) {
+        self.cmd.data.advance_mut(cnt);
+    }
+
+    fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
+        self.cmd.data.chunk_mut()
+    }
+
+    // Vec specializes these methods, so we do too
+    fn put<T: bytes::buf::Buf>(&mut self, src: T)
+    where
+        Self: Sized,
+    {
+        self.cmd.data.put(src);
+    }
+
+    fn put_slice(&mut self, src: &[u8]) {
+        self.cmd.data.put_slice(src);
+    }
+
+    fn put_bytes(&mut self, val: u8, cnt: usize) {
+        self.cmd.data.put_bytes(val, cnt);
+    }
+}
+
+impl Write for CmdBufferedArgGuard<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.cmd.data.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 impl RedisWrite for Cmd {
     fn write_arg(&mut self, arg: &[u8]) {
+        self.data.reserve(bulk_len(arg.len()));
+        write_length(&mut self.data, arg.len()).unwrap();
         let start = self.data.len();
         self.data.extend_from_slice(arg);
         self.args.push(Arg::Simple(start..self.data.len()));
+        self.data.extend_from_slice(b"\r\n");
     }
 
-    fn write_arg_fmt(&mut self, arg: impl fmt::Display) {
+    fn write_arg_fmt(&mut self, arg: impl fmt::Display, known_size: Option<usize>) {
+        if let Some(known_size) = known_size {
+            self.data.reserve(bulk_len(known_size));
+            write_length(&mut self.data, known_size).unwrap();
+        } else {
+            self.buffering = true;
+        }
+
         let start = self.data.len();
         write!(self.data, "{arg}").unwrap();
         self.args.push(Arg::Simple(start..self.data.len()));
+        self.data.extend_from_slice(b"\r\n");
     }
 
-    fn writer_for_next_arg(&mut self) -> impl Write + '_ {
-        struct CmdBufferedArgGuard<'a>((&'a mut Cmd, usize));
-        impl Drop for CmdBufferedArgGuard<'_> {
-            fn drop(&mut self) {
-                self.0
-                     .0
-                    .args
-                    .push(Arg::Simple(self.0 .1..self.0 .0.data.len()));
-            }
+    fn writer_for_next_arg(&mut self, known_size: Option<usize>) -> impl Write + '_ {
+        if let Some(known_size) = known_size {
+            self.data.reserve(bulk_len(known_size));
+            write_length(&mut self.data, known_size).unwrap();
         }
-        impl Write for CmdBufferedArgGuard<'_> {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.0 .0.data.extend_from_slice(buf);
-                Ok(buf.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
+        self.buffering = true;
+        let is_precise = known_size.is_some();
         let start = self.data.len();
-        CmdBufferedArgGuard((self, start))
+        CmdBufferedArgGuard {
+            cmd: self,
+            start,
+            is_precise,
+        }
     }
 
     fn reserve_space_for_args(&mut self, additional: impl IntoIterator<Item = usize>) {
@@ -398,49 +468,29 @@ impl RedisWrite for Cmd {
     }
 
     #[cfg(feature = "bytes")]
-    fn bufmut_for_next_arg(&mut self, capacity: usize) -> impl bytes::BufMut + '_ {
+    fn bufmut_for_next_arg(
+        &mut self,
+        capacity: usize,
+        is_precise: bool,
+    ) -> impl bytes::BufMut + '_ {
+        self.buffering = true;
+        let length = capacity;
+        let capacity = if is_precise {
+            bulk_len(capacity)
+        } else {
+            capacity
+        };
         self.data.reserve(capacity);
-        struct CmdBufferedArgGuard<'a>((&'a mut Cmd, usize));
-        impl Drop for CmdBufferedArgGuard<'_> {
-            fn drop(&mut self) {
-                self.0
-                     .0
-                    .args
-                    .push(Arg::Simple(self.0 .1..self.0 .0.data.len()));
-            }
+
+        if is_precise {
+            write_length(&mut self.data, length).unwrap();
         }
-        unsafe impl bytes::BufMut for CmdBufferedArgGuard<'_> {
-            fn remaining_mut(&self) -> usize {
-                self.0 .0.data.remaining_mut()
-            }
-
-            unsafe fn advance_mut(&mut self, cnt: usize) {
-                self.0 .0.data.advance_mut(cnt);
-            }
-
-            fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
-                self.0 .0.data.chunk_mut()
-            }
-
-            // Vec specializes these methods, so we do too
-            fn put<T: bytes::buf::Buf>(&mut self, src: T)
-            where
-                Self: Sized,
-            {
-                self.0 .0.data.put(src);
-            }
-
-            fn put_slice(&mut self, src: &[u8]) {
-                self.0 .0.data.put_slice(src);
-            }
-
-            fn put_bytes(&mut self, val: u8, cnt: usize) {
-                self.0 .0.data.put_bytes(val, cnt);
-            }
-        }
-
         let start = self.data.len();
-        CmdBufferedArgGuard((self, start))
+        CmdBufferedArgGuard {
+            cmd: self,
+            start,
+            is_precise,
+        }
     }
 }
 
@@ -485,6 +535,7 @@ impl Cmd {
             args: vec![],
             cursor: None,
             no_response: false,
+            buffering: false,
             #[cfg(feature = "cache-aio")]
             cache: None,
         }
@@ -497,6 +548,7 @@ impl Cmd {
             args: Vec::with_capacity(arg_count),
             cursor: None,
             no_response: false,
+            buffering: false,
             #[cfg(feature = "cache-aio")]
             cache: None,
         }
@@ -528,6 +580,7 @@ impl Cmd {
     /// cmd.query::<()>(&mut con).expect("Query failed");
     /// ```
     pub fn clear(&mut self) {
+        self.buffering = false;
         self.data.clear();
         self.args.clear();
         self.cursor = None;
@@ -588,7 +641,7 @@ impl Cmd {
     /// [`write_packed_command`]: Self::write_packed_command
     #[inline]
     pub fn get_packed_command(&self) -> Vec<u8> {
-        let mut cmd = Vec::new();
+        let mut cmd: Vec<u8> = Vec::new();
         self.write_packed_command(&mut cmd);
         cmd
     }
@@ -600,13 +653,23 @@ impl Cmd {
     /// See also [`get_packed_command`].
     ///
     /// [`get_packed_command`]: Self::get_packed_command.
-    #[inline]
     pub fn write_packed_command(&self, dst: &mut Vec<u8>) {
-        write_command_to_vec(dst, self.args_iter(), self.cursor.unwrap_or(0))
+        if self.cursor.is_some() || self.buffering {
+            reserve_and_write_command(dst, self.args_iter(), self.cursor.unwrap_or(0));
+        } else {
+            dst.reserve(self.data.len() + 3 + count_digits(self.args.len()));
+            write_count(dst, self.args.len()).unwrap();
+            dst.write_all(&self.data).unwrap();
+        }
     }
 
-    pub(crate) fn write_packed_command_preallocated(&self, cmd: &mut Vec<u8>) {
-        write_command(cmd, self.args_iter(), self.cursor.unwrap_or(0)).unwrap()
+    pub(crate) fn write_packed_command_preallocated(&self, dst: &mut Vec<u8>) {
+        if self.cursor.is_some() || self.buffering {
+            write_command(dst, self.args_iter(), self.cursor.unwrap_or(0)).unwrap();
+        } else {
+            write_count(dst, self.args.len()).unwrap();
+            dst.write_all(&self.data).unwrap();
+        }
     }
 
     /// Returns true if the command is in scan mode.
@@ -836,6 +899,43 @@ mod tests {
     use super::*;
     #[cfg(feature = "bytes")]
     use bytes::BufMut;
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_cmd_packed_command_simple_args(#[values(false, true)] give_size: bool) {
+        let mut cmd = Cmd::new();
+        let args: &[&[u8]] = &[b"phone", b"barz"];
+        cmd.arg("key")
+            .write_arg_fmt("value", give_size.then_some(5));
+        cmd.arg(42).arg(args);
+
+        let packed_command = cmd.get_packed_command();
+        assert_eq!(
+            packed_command,
+            b"*5\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$2\r\n42\r\n$5\r\nphone\r\n$4\r\nbarz\r\n",
+            "{}",
+            String::from_utf8(packed_command.clone()).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_cmd_packed_command_with_cursor() {
+        let mut cmd = Cmd::new();
+        let args: &[&[u8]] = &[b"phone", b"barz"];
+        cmd.arg("key")
+            .arg("value")
+            .arg(42)
+            .arg(args)
+            .cursor_arg(512);
+
+        let packed_command = cmd.get_packed_command();
+        assert_eq!(
+            packed_command,
+            b"*6\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$2\r\n42\r\n$5\r\nphone\r\n$4\r\nbarz\r\n$3\r\n512\r\n",
+            "{}",
+            String::from_utf8(packed_command.clone()).unwrap()
+        );
+    }
 
     #[test]
     fn test_cmd_clean() {
@@ -852,6 +952,7 @@ mod tests {
         assert!(cmd.args.capacity() > 0);
         assert_eq!(cmd.cursor, None);
         assert!(!cmd.no_response);
+        assert!(!cmd.buffering);
     }
 
     #[test]
@@ -874,13 +975,13 @@ mod tests {
         assert!(cmd.cache.is_none());
     }
 
-    #[test]
-    fn test_cmd_writer_for_next_arg() {
+    #[rstest]
+    fn test_cmd_writer_for_next_arg(#[values(false, true)] give_size: bool) {
         // Test that a write split across multiple calls to `write` produces the
         // same result as a single call to `write_arg`
         let mut c1 = Cmd::new();
         {
-            let mut c1_writer = c1.writer_for_next_arg();
+            let mut c1_writer = c1.writer_for_next_arg(give_size.then_some(6));
             c1_writer.write_all(b"foo").unwrap();
             c1_writer.write_all(b"bar").unwrap();
             c1_writer.flush().unwrap();
@@ -896,17 +997,17 @@ mod tests {
 
     // Test that multiple writers to the same command produce the same
     // result as the same multiple calls to `write_arg`
-    #[test]
-    fn test_cmd_writer_for_next_arg_multiple() {
+    #[rstest]
+    fn test_cmd_writer_for_next_arg_multiple(#[values(false, true)] give_size: bool) {
         let mut c1 = Cmd::new();
         {
-            let mut c1_writer = c1.writer_for_next_arg();
+            let mut c1_writer = c1.writer_for_next_arg(give_size.then_some(6));
             c1_writer.write_all(b"foo").unwrap();
             c1_writer.write_all(b"bar").unwrap();
             c1_writer.flush().unwrap();
         }
         {
-            let mut c1_writer = c1.writer_for_next_arg();
+            let mut c1_writer = c1.writer_for_next_arg(give_size.then_some(6));
             c1_writer.write_all(b"baz").unwrap();
             c1_writer.write_all(b"qux").unwrap();
             c1_writer.flush().unwrap();
@@ -922,11 +1023,11 @@ mod tests {
     }
 
     // Test that an "empty" write produces the equivalent to `write_arg(b"")`
-    #[test]
-    fn test_cmd_writer_for_next_arg_empty() {
+    #[rstest]
+    fn test_cmd_writer_for_next_arg_empty(#[values(false, true)] give_size: bool) {
         let mut c1 = Cmd::new();
         {
-            let mut c1_writer = c1.writer_for_next_arg();
+            let mut c1_writer = c1.writer_for_next_arg(give_size.then_some(0));
             c1_writer.flush().unwrap();
         }
         let v1 = c1.get_packed_command();
@@ -941,11 +1042,11 @@ mod tests {
     #[cfg(feature = "bytes")]
     /// Test that a write split across multiple calls to `write` produces the
     /// same result as a single call to `write_arg`
-    #[test]
-    fn test_cmd_bufmut_for_next_arg() {
+    #[rstest]
+    fn test_cmd_bufmut_for_next_arg(#[values(false, true)] give_size: bool) {
         let mut c1 = Cmd::new();
         {
-            let mut c1_writer = c1.bufmut_for_next_arg(6);
+            let mut c1_writer = c1.bufmut_for_next_arg(6, give_size);
             c1_writer.put_slice(b"foo");
             c1_writer.put_slice(b"bar");
         }
@@ -961,16 +1062,16 @@ mod tests {
     #[cfg(feature = "bytes")]
     /// Test that multiple writers to the same command produce the same
     /// result as the same multiple calls to `write_arg`
-    #[test]
-    fn test_cmd_bufmut_for_next_arg_multiple() {
+    #[rstest]
+    fn test_cmd_bufmut_for_next_arg_multiple(#[values(false, true)] give_size: bool) {
         let mut c1 = Cmd::new();
         {
-            let mut c1_writer = c1.bufmut_for_next_arg(6);
+            let mut c1_writer = c1.bufmut_for_next_arg(6, give_size);
             c1_writer.put_slice(b"foo");
             c1_writer.put_slice(b"bar");
         }
         {
-            let mut c1_writer = c1.bufmut_for_next_arg(6);
+            let mut c1_writer = c1.bufmut_for_next_arg(6, give_size);
             c1_writer.put_slice(b"baz");
             c1_writer.put_slice(b"qux");
         }
@@ -986,11 +1087,11 @@ mod tests {
 
     #[cfg(feature = "bytes")]
     /// Test that an "empty" write produces the equivalent to `write_arg(b"")`
-    #[test]
-    fn test_cmd_bufmut_for_next_arg_empty() {
+    #[rstest]
+    fn test_cmd_bufmut_for_next_arg_empty(#[values(false, true)] give_size: bool) {
         let mut c1 = Cmd::new();
         {
-            let _c1_writer = c1.bufmut_for_next_arg(0);
+            let _c1_writer = c1.bufmut_for_next_arg(0, give_size);
         }
         let v1 = c1.get_packed_command();
 
