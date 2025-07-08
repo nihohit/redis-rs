@@ -251,7 +251,7 @@ impl<'a, T: FromRedisValue + Unpin + Send + 'a> Stream for AsyncIter<'a, T> {
     }
 }
 
-fn countdigits(mut v: usize) -> usize {
+fn count_digits(mut v: usize) -> usize {
     let mut result = 1;
     loop {
         if v < 10 {
@@ -273,18 +273,18 @@ fn countdigits(mut v: usize) -> usize {
 }
 
 #[inline]
-fn bulklen(len: usize) -> usize {
-    1 + countdigits(len) + 2 + len + 2
+fn bulk_len(len: usize) -> usize {
+    1 + count_digits(len) + 2 + len + 2
 }
 
 fn args_len<'a, I>(args: I, cursor: u64) -> usize
 where
     I: IntoIterator<Item = Arg<&'a [u8]>> + ExactSizeIterator,
 {
-    let mut totlen = 1 + countdigits(args.len()) + 2;
+    let mut totlen = 1 + count_digits(args.len()) + 2;
     for item in args {
-        totlen += bulklen(match item {
-            Arg::Cursor => countdigits(cursor as usize),
+        totlen += bulk_len(match item {
+            Arg::Cursor => count_digits(cursor as usize),
             Arg::Simple(val) => val.len(),
         });
     }
