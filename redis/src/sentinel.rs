@@ -231,16 +231,13 @@ impl Default for &SentinelNodeConnectionInfo {
 }
 
 fn sentinel_masters_cmd() -> crate::Cmd {
-    let mut cmd = crate::cmd("SENTINEL");
-    cmd.arg("MASTERS");
-    cmd
+    crate::cmd("SENTINEL").arg("MASTERS")
 }
 
 fn sentinel_replicas_cmd(master_name: &str) -> crate::Cmd {
-    let mut cmd = crate::cmd("SENTINEL");
-    cmd.arg("SLAVES"); // For compatibility with older redis versions
-    cmd.arg(master_name);
-    cmd
+    crate::cmd("SENTINEL")
+        .arg("SLAVES") // For compatibility with older redis versions
+        .arg(master_name)
 }
 
 fn is_master_valid(master_info: &HashMap<String, String>, service_name: &str) -> bool {
@@ -607,7 +604,10 @@ async fn async_try_single_sentinel<T: FromRedisValue>(
         async_reconnect(cached_connection, connection_info).await?;
     }
 
-    let result = cmd.query_async(cached_connection.as_mut().unwrap()).await;
+    let result = cmd
+        .clone()
+        .query_async(cached_connection.as_mut().unwrap())
+        .await;
 
     if let Err(err) = result {
         if err.is_unrecoverable_error() || err.is_io_error() {

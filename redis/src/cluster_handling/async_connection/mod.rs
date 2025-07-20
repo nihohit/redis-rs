@@ -197,14 +197,14 @@ where
     }
 
     /// Send a command to the given `routing`, and aggregate the response according to `response_policy`.
-    pub async fn route_command(&mut self, cmd: &Cmd, routing: RoutingInfo) -> RedisResult<Value> {
+    pub async fn route_command(&mut self, cmd: Cmd, routing: RoutingInfo) -> RedisResult<Value> {
         trace!("send_packed_command");
         let (sender, receiver) = oneshot::channel();
         let request = async {
             self.sender
                 .send(Message {
                     cmd: CmdArg::Cmd {
-                        cmd: Arc::new(cmd.clone()), // TODO Remove this clone?
+                        cmd: Arc::new(cmd),
                         routing: routing.into(),
                     },
                     sender,
@@ -285,9 +285,7 @@ where
     /// receive additional pushes with [crate::PushKind::Subscribe], later after the subscription completed.
     pub async fn subscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.state.protocol);
-        let mut cmd = cmd("SUBSCRIBE");
-        cmd.arg(channel_name);
-        cmd.exec_async(self).await?;
+        cmd("SUBSCRIBE").arg(channel_name).exec_async(self).await?;
         Ok(())
     }
 
@@ -296,9 +294,10 @@ where
     /// This method is only available when the connection is using RESP3 protocol, and will return an error otherwise.
     pub async fn unsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.state.protocol);
-        let mut cmd = cmd("UNSUBSCRIBE");
-        cmd.arg(channel_name);
-        cmd.exec_async(self).await?;
+        cmd("UNSUBSCRIBE")
+            .arg(channel_name)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
 
@@ -312,9 +311,10 @@ where
     /// receive additional pushes with [crate::PushKind::PSubscribe], later after the subscription completed.
     pub async fn psubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.state.protocol);
-        let mut cmd = cmd("PSUBSCRIBE");
-        cmd.arg(channel_pattern);
-        cmd.exec_async(self).await?;
+        cmd("PSUBSCRIBE")
+            .arg(channel_pattern)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
 
@@ -323,9 +323,10 @@ where
     /// This method is only available when the connection is using RESP3 protocol, and will return an error otherwise.
     pub async fn punsubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.state.protocol);
-        let mut cmd = cmd("PUNSUBSCRIBE");
-        cmd.arg(channel_pattern);
-        cmd.exec_async(self).await?;
+        cmd("PUNSUBSCRIBE")
+            .arg(channel_pattern)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
 
@@ -339,9 +340,7 @@ where
     /// receive additional pushes with [crate::PushKind::SSubscribe], later after the subscription completed.
     pub async fn ssubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.state.protocol);
-        let mut cmd = cmd("SSUBSCRIBE");
-        cmd.arg(channel_name);
-        cmd.exec_async(self).await?;
+        cmd("SSUBSCRIBE").arg(channel_name).exec_async(self).await?;
         Ok(())
     }
 
@@ -350,9 +349,10 @@ where
     /// This method is only available when the connection is using RESP3 protocol, and will return an error otherwise.
     pub async fn sunsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.state.protocol);
-        let mut cmd = cmd("SUNSUBSCRIBE");
-        cmd.arg(channel_name);
-        cmd.exec_async(self).await?;
+        cmd("SUNSUBSCRIBE")
+            .arg(channel_name)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
     /// Gets [`CacheStatistics`] for cluster connection if caching is enabled.
@@ -596,7 +596,7 @@ where
         for (addr, conn) in &mut *connections {
             result = async {
                 let value = conn
-                    .req_packed_command(&slot_cmd())
+                    .req_packed_command(slot_cmd())
                     .await
                     .and_then(|value| value.extract_error())?;
                 let v: Vec<Slot> = parse_slots(value, addr.rsplit_once(':').unwrap().0)?;
@@ -891,7 +891,7 @@ where
         match Self::get_connection(route, core).await {
             Ok((addr, mut conn)) => (
                 addr.into(),
-                conn.req_packed_command(&cmd).await.map(Response::Single),
+                conn.req_packed_command(cmd).await.map(Response::Single),
             ),
             Err(err) => (OperationTarget::NotFound, Err(err)),
         }
@@ -1017,7 +1017,7 @@ where
         };
         if asking {
             let _ = conn
-                .req_packed_command(&crate::cmd::cmd("ASKING"))
+                .req_packed_command(crate::cmd::cmd("ASKING"))
                 .await
                 .and_then(|value| value.extract_error());
         }
@@ -1295,8 +1295,8 @@ impl<C> ConnectionLike for ClusterConnection<C>
 where
     C: ConnectionLike + Send + Clone + Unpin + Sync + Connect + 'static,
 {
-    fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        let routing = RoutingInfo::for_routable(cmd)
+    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+        let routing = RoutingInfo::for_routable(&cmd)
             .unwrap_or(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random));
         self.route_command(cmd, routing).boxed()
     }
@@ -1401,7 +1401,7 @@ where
         cmd("PING")
     };
 
-    conn.req_packed_command(&check).await?;
+    conn.req_packed_command(check).await?;
     Ok(conn)
 }
 
@@ -1409,10 +1409,7 @@ async fn check_connection<C>(conn: &mut C) -> RedisResult<()>
 where
     C: ConnectionLike + Send + 'static,
 {
-    let mut cmd = Cmd::new();
-    cmd.arg("PING");
-    cmd.query_async::<()>(conn).await?;
-    Ok(())
+    cmd("PING").exec_async(conn).await
 }
 
 fn get_random_connection<C>(connections: &ConnectionMap<C>) -> Option<(ArcStr, C)>

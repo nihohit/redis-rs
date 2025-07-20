@@ -184,7 +184,7 @@ impl<'a, T: FromRedisValue + 'a> AsyncIterInner<'a, T> {
 
             let (cursor, batch) = match self
                 .con
-                .req_packed_command(&self.cmd)
+                .req_packed_command(self.cmd.clone())
                 .await
                 .and_then(|val| Ok(from_owned_redis_value::<(u64, _)>(val)?))
             {
@@ -612,8 +612,9 @@ impl Cmd {
     /// redis::cmd("SET").arg("my_key").arg(b"my_value");
     /// ```
     #[inline]
-    pub fn arg<T: ToRedisArgs>(&mut self, arg: T) -> &mut Cmd {
-        arg.write_redis_args(self);
+    #[must_use]
+    pub fn arg<T: ToRedisArgs>(mut self, arg: T) -> Cmd {
+        arg.write_redis_args(&mut self);
         self
     }
 
@@ -635,7 +636,8 @@ impl Cmd {
     /// }
     /// ```
     #[inline]
-    pub fn cursor_arg(&mut self, cursor: u64) -> &mut Cmd {
+    #[must_use]
+    pub fn cursor_arg(mut self, cursor: u64) -> Cmd {
         self.cursor = Some(cursor);
         self.args.push(Arg::Cursor);
         self
@@ -706,7 +708,7 @@ impl Cmd {
     #[inline]
     #[cfg(feature = "aio")]
     pub async fn query_async<T: FromRedisValue>(
-        &self,
+        self,
         con: &mut impl crate::aio::ConnectionLike,
     ) -> RedisResult<T> {
         let val = con.req_packed_command(self).await?;
@@ -784,7 +786,7 @@ impl Cmd {
         mut self,
         con: &'a mut (dyn AsyncConnection + Send),
     ) -> RedisResult<AsyncIter<'a, T>> {
-        let rv = con.req_packed_command(&self).await?;
+        let rv = con.req_packed_command(self.clone()).await?;
 
         let batch = self.set_cursor_and_get_batch(rv)?;
 
@@ -811,7 +813,7 @@ impl Cmd {
     /// this is useful for "SET" commands for which the response's content is not important.
     /// It avoids the need to define generic bounds for ().
     #[cfg(feature = "aio")]
-    pub async fn exec_async(&self, con: &mut impl crate::aio::ConnectionLike) -> RedisResult<()> {
+    pub async fn exec_async(self, con: &mut impl crate::aio::ConnectionLike) -> RedisResult<()> {
         self.query_async::<()>(con).await
     }
 
@@ -875,9 +877,8 @@ impl Cmd {
 /// redis::cmd("PING");
 /// ```
 pub fn cmd(name: &str) -> Cmd {
-    let mut rv = Cmd::new();
-    rv.arg(name);
-    rv
+    let rv = Cmd::new();
+    rv.arg(name)
 }
 
 /// Packs a bunch of commands into a request.

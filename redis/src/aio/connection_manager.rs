@@ -497,7 +497,7 @@ impl ConnectionManager {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
+    pub async fn send_packed_command(&mut self, cmd: Cmd) -> RedisResult<Value> {
         // Clone connection to avoid having to lock the ArcSwap in write mode
         let guard = self.0.connection.load();
         let connection_result = (**guard).clone().await.map_err(|e| e.clone());
@@ -552,9 +552,7 @@ impl ConnectionManager {
     /// the subscription will be removed on a disconnect and must be re-subscribed.
     pub async fn subscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.0.client.connection_info.redis.protocol);
-        let mut cmd = cmd("SUBSCRIBE");
-        cmd.arg(&channel_name);
-        cmd.exec_async(self).await?;
+        cmd("SUBSCRIBE").arg(&channel_name).exec_async(self).await?;
         self.update_subscription_tracker(SubscriptionAction::Subscribe, channel_name)
             .await;
 
@@ -566,9 +564,10 @@ impl ConnectionManager {
     /// This method is only available when the connection is using RESP3 protocol, and will return an error otherwise.
     pub async fn unsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.0.client.connection_info.redis.protocol);
-        let mut cmd = cmd("UNSUBSCRIBE");
-        cmd.arg(&channel_name);
-        cmd.exec_async(self).await?;
+        cmd("UNSUBSCRIBE")
+            .arg(&channel_name)
+            .exec_async(self)
+            .await?;
         self.update_subscription_tracker(SubscriptionAction::Unsubscribe, channel_name)
             .await;
         Ok(())
@@ -584,9 +583,10 @@ impl ConnectionManager {
     /// the subscription will be removed on a disconnect and must be re-subscribed.
     pub async fn psubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.0.client.connection_info.redis.protocol);
-        let mut cmd = cmd("PSUBSCRIBE");
-        cmd.arg(&channel_pattern);
-        cmd.exec_async(self).await?;
+        cmd("PSUBSCRIBE")
+            .arg(&channel_pattern)
+            .exec_async(self)
+            .await?;
         self.update_subscription_tracker(SubscriptionAction::PSubscribe, channel_pattern)
             .await;
         Ok(())
@@ -597,9 +597,10 @@ impl ConnectionManager {
     /// This method is only available when the connection is using RESP3 protocol, and will return an error otherwise.
     pub async fn punsubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.0.client.connection_info.redis.protocol);
-        let mut cmd = cmd("PUNSUBSCRIBE");
-        cmd.arg(&channel_pattern);
-        cmd.exec_async(self).await?;
+        cmd("PUNSUBSCRIBE")
+            .arg(&channel_pattern)
+            .exec_async(self)
+            .await?;
         self.update_subscription_tracker(SubscriptionAction::PUnsubscribe, channel_pattern)
             .await;
         Ok(())
@@ -614,7 +615,7 @@ impl ConnectionManager {
 }
 
 impl ConnectionLike for ConnectionManager {
-    fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
         (async move { self.send_packed_command(cmd).await }).boxed()
     }
 

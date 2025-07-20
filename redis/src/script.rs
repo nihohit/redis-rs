@@ -165,7 +165,7 @@ impl<'a> ScriptInvocation<'a> {
         con: &mut impl crate::aio::ConnectionLike,
     ) -> RedisResult<T> {
         let eval_cmd = self.eval_cmd();
-        match eval_cmd.query_async(con).await {
+        match eval_cmd.clone().query_async(con).await {
             Ok(val) => {
                 // Return the value from the script evaluation
                 Ok(val)
@@ -209,9 +209,7 @@ impl<'a> ScriptInvocation<'a> {
 
     /// Returns a command to load the script.
     fn load_cmd(&self) -> Cmd {
-        let mut cmd = cmd("SCRIPT");
-        cmd.arg("LOAD").arg(self.script.code.as_bytes());
-        cmd
+        cmd("SCRIPT").arg("LOAD").arg(self.script.code.as_bytes())
     }
 
     fn estimate_buflen(&self) -> usize {
@@ -228,13 +226,12 @@ impl<'a> ScriptInvocation<'a> {
     /// Returns a command to evaluate the command.
     pub(crate) fn eval_cmd(&self) -> Cmd {
         let args_len = 3 + self.keys.len() + self.args.len();
-        let mut cmd = Cmd::with_capacity(args_len, self.estimate_buflen());
+        let cmd = Cmd::with_capacity(args_len, self.estimate_buflen());
         cmd.arg("EVALSHA")
             .arg(self.script.hash.as_bytes())
             .arg(self.keys.len())
             .arg(&*self.keys)
-            .arg(&*self.args);
-        cmd
+            .arg(&*self.args)
     }
 }
 

@@ -668,7 +668,7 @@ impl MultiplexedConnection {
 }
 
 impl ConnectionLike for MultiplexedConnection {
-    fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
         (async move { self.send_packed_command(cmd).await }).boxed()
     }
 
@@ -705,9 +705,7 @@ impl MultiplexedConnection {
     /// ```
     pub async fn subscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.protocol);
-        let mut cmd = cmd("SUBSCRIBE");
-        cmd.arg(channel_name);
-        cmd.exec_async(self).await?;
+        cmd("SUBSCRIBE").arg(channel_name).exec_async(self).await?;
         Ok(())
     }
 
@@ -727,9 +725,10 @@ impl MultiplexedConnection {
     /// ```
     pub async fn unsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.protocol);
-        let mut cmd = cmd("UNSUBSCRIBE");
-        cmd.arg(channel_name);
-        cmd.exec_async(self).await?;
+        cmd("UNSUBSCRIBE")
+            .arg(channel_name)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
 
@@ -752,9 +751,10 @@ impl MultiplexedConnection {
     /// ```
     pub async fn psubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.protocol);
-        let mut cmd = cmd("PSUBSCRIBE");
-        cmd.arg(channel_pattern);
-        cmd.exec_async(self).await?;
+        cmd("PSUBSCRIBE")
+            .arg(channel_pattern)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
 
@@ -763,9 +763,10 @@ impl MultiplexedConnection {
     /// This method is only available when the connection is using RESP3 protocol, and will return an error otherwise.
     pub async fn punsubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
         check_resp3!(self.protocol);
-        let mut cmd = cmd("PUNSUBSCRIBE");
-        cmd.arg(channel_pattern);
-        cmd.exec_async(self).await?;
+        cmd("PUNSUBSCRIBE")
+            .arg(channel_pattern)
+            .exec_async(self)
+            .await?;
         Ok(())
     }
 }

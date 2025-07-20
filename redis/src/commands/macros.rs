@@ -87,32 +87,28 @@ macro_rules! implement_iterators {
         /// Incrementally iterate the keys space.
         #[inline]
         fn scan<RV: FromRedisValue>(&mut self) -> $ret {
-            let mut c = cmd("SCAN");
-            c.cursor_arg(0);
+            let c = cmd("SCAN").cursor_arg(0);
             $iter(c, self)
         }
 
         /// Incrementally iterate the keys space with options.
         #[inline]
         fn scan_options<RV: FromRedisValue>(&mut self, opts: ScanOptions) -> $ret {
-            let mut c = cmd("SCAN");
-            c.cursor_arg(0).arg(opts);
+            let c = cmd("SCAN").cursor_arg(0).arg(opts);
             $iter(c, self)
         }
 
         /// Incrementally iterate the keys space for keys matching a pattern.
         #[inline]
         fn scan_match<P: ToRedisArgs, RV: FromRedisValue>(&mut self, pattern: P) -> $ret {
-            let mut c = cmd("SCAN");
-            c.cursor_arg(0).arg("MATCH").arg(pattern);
+            let c = cmd("SCAN").cursor_arg(0).arg("MATCH").arg(pattern);
             $iter(c, self)
         }
 
         /// Incrementally iterate hash fields and associated values.
         #[inline]
         fn hscan<K: ToRedisArgs, RV: FromRedisValue>(&mut self, key: K) -> $ret {
-            let mut c = cmd("HSCAN");
-            c.arg(key).cursor_arg(0);
+            let c = cmd("HSCAN").arg(key).cursor_arg(0);
             $iter(c, self)
         }
 
@@ -124,16 +120,18 @@ macro_rules! implement_iterators {
             key: K,
             pattern: P,
         ) -> $ret {
-            let mut c = cmd("HSCAN");
-            c.arg(key).cursor_arg(0).arg("MATCH").arg(pattern);
+            let c = cmd("HSCAN")
+                .arg(key)
+                .cursor_arg(0)
+                .arg("MATCH")
+                .arg(pattern);
             $iter(c, self)
         }
 
         /// Incrementally iterate set elements.
         #[inline]
         fn sscan<K: ToRedisArgs, RV: FromRedisValue>(&mut self, key: K) -> $ret {
-            let mut c = cmd("SSCAN");
-            c.arg(key).cursor_arg(0);
+            let c = cmd("SSCAN").arg(key).cursor_arg(0);
             $iter(c, self)
         }
 
@@ -144,16 +142,18 @@ macro_rules! implement_iterators {
             key: K,
             pattern: P,
         ) -> $ret {
-            let mut c = cmd("SSCAN");
-            c.arg(key).cursor_arg(0).arg("MATCH").arg(pattern);
+            let c = cmd("SSCAN")
+                .arg(key)
+                .cursor_arg(0)
+                .arg("MATCH")
+                .arg(pattern);
             $iter(c, self)
         }
 
         /// Incrementally iterate sorted set elements.
         #[inline]
         fn zscan<K: ToRedisArgs, RV: FromRedisValue>(&mut self, key: K) -> $ret {
-            let mut c = cmd("ZSCAN");
-            c.arg(key).cursor_arg(0);
+            let c = cmd("ZSCAN").arg(key).cursor_arg(0);
             $iter(c, self)
         }
 
@@ -164,8 +164,11 @@ macro_rules! implement_iterators {
             key: K,
             pattern: P,
         ) -> $ret {
-            let mut c = cmd("ZSCAN");
-            c.arg(key).cursor_arg(0).arg("MATCH").arg(pattern);
+            let c = cmd("ZSCAN")
+                .arg(key)
+                .cursor_arg(0)
+                .arg("MATCH")
+                .arg(pattern);
             $iter(c, self)
         }
     };
