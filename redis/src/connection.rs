@@ -1166,11 +1166,10 @@ fn authenticate_cmd(
     let mut command = cmd("AUTH");
     if check_username {
         if let Some(username) = &connection_info.username {
-            command.arg(username.as_str());
+            command = command.arg(username.as_str());
         }
     }
-    command.arg(password);
-    command
+    command.arg(password)
 }
 
 pub fn connect(

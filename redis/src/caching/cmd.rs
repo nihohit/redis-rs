@@ -136,9 +136,7 @@ impl CacheableCommand<'_> {
 
     pub(crate) fn pack_command(&self, cache_manager: &CacheManager, pipeline: &mut Pipeline) {
         if cache_manager.cache_config.mode == CacheMode::OptIn {
-            let mut cmd = Cmd::new();
-            cmd.arg("CLIENT").arg("CACHING").arg("YES");
-            pipeline.add_command(cmd);
+            pipeline.cmd("CLIENT").arg("CACHING").arg("YES");
         }
 
         match self {
@@ -153,13 +151,12 @@ impl CacheableCommand<'_> {
                 client_side_expire: _client_side_expire,
                 tail_args,
             } => {
-                let mut cmd = Cmd::new();
-                cmd.arg(command_name);
+                let mut cmd = Cmd::new().arg(command_name);
                 for command in commands {
-                    cmd.arg(command.1.redis_key);
+                    cmd = cmd.arg(command.1.redis_key);
                 }
                 for tail_arg in tail_args {
-                    cmd.arg(tail_arg);
+                    cmd = cmd.arg(tail_arg);
                 }
                 pipeline.add_command(cmd);
                 for command in commands {
