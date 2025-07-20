@@ -10,7 +10,6 @@ use std::default::Default;
 use std::ffi::CString;
 use std::fmt;
 use std::hash::{BuildHasher, Hash};
-use std::io;
 use std::ops::Deref;
 use std::str::from_utf8;
 
@@ -786,7 +785,7 @@ pub trait RedisWrite {
             /// The buffer, implements [`bytes::BufMut`] allowing passthrough
             buf: Vec<u8>,
             /// The writer to the command, used on drop
-            writer: Box<dyn io::Write + 'a>,
+            writer: Box<dyn std::io::Write + 'a>,
         }
         unsafe impl bytes::BufMut for Wrapper<'_> {
             fn remaining_mut(&self) -> usize {

@@ -78,7 +78,7 @@ impl Default for CommandCacheConfig {
 pub struct Cmd {
     pub(crate) data: Vec<u8>,
     // Arg::Simple contains the range for each argument
-    args: Vec<Arg<Range<usize>>>,
+    pub(crate) args: Vec<Arg<Range<usize>>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
@@ -324,7 +324,7 @@ fn write_number(dst: &mut (impl ?Sized + Write), len: usize, marker: &[u8]) -> s
     dst.write_all(b"\r\n")
 }
 
-fn write_count(dst: &mut (impl ?Sized + Write), count: usize) -> std::io::Result<()> {
+pub(crate) fn write_count(dst: &mut (impl ?Sized + Write), count: usize) -> std::io::Result<()> {
     write_number(dst, count, b"*")
 }
 
@@ -419,15 +419,19 @@ impl Write for CmdBufferedArgGuard<'_> {
 
 impl RedisWrite for Cmd {
     fn write_arg(&mut self, arg: &[u8]) {
-        self.data.reserve(bulk_len(arg.len()));
+        let len = bulk_len(arg.len());
+        //let start_len = self.data.len();
+        self.data.reserve(len);
         write_length(&mut self.data, arg.len()).unwrap();
         let start = self.data.len();
         self.data.extend_from_slice(arg);
         self.args.push(Arg::Simple(start..self.data.len()));
         self.data.extend_from_slice(b"\r\n");
+        //assert_eq!(start_len + len, self.data.len());
     }
 
     fn write_arg_fmt(&mut self, arg: impl fmt::Display, known_size: Option<usize>) {
+        // let start_len = self.data.len();
         if let Some(known_size) = known_size {
             self.data.reserve(bulk_len(known_size));
             write_length(&mut self.data, known_size).unwrap();
@@ -439,6 +443,9 @@ impl RedisWrite for Cmd {
         write!(self.data, "{arg}").unwrap();
         self.args.push(Arg::Simple(start..self.data.len()));
         self.data.extend_from_slice(b"\r\n");
+        // if let Some(known_size) = known_size {
+        //     assert_eq!(start_len + bulk_len(known_size), self.data.len());
+        // }
     }
 
     fn writer_for_next_arg(&mut self, known_size: Option<usize>) -> impl Write + '_ {
@@ -654,17 +661,19 @@ impl Cmd {
     ///
     /// [`get_packed_command`]: Self::get_packed_command.
     pub fn write_packed_command(&self, dst: &mut Vec<u8>) {
-        if self.cursor.is_some() || self.buffering {
+        if !self.data_is_complete() {
             reserve_and_write_command(dst, self.args_iter(), self.cursor.unwrap_or(0));
         } else {
-            dst.reserve(self.data.len() + 3 + count_digits(self.args.len()));
+            let expected_len = self.data.len() + 3 + count_digits(self.args.len()) + dst.len();
+            dst.reserve(expected_len);
             write_count(dst, self.args.len()).unwrap();
             dst.write_all(&self.data).unwrap();
+            //assert_eq!(expected_len, dst.len());
         }
     }
 
     pub(crate) fn write_packed_command_preallocated(&self, dst: &mut Vec<u8>) {
-        if self.cursor.is_some() || self.buffering {
+        if !self.data_is_complete() {
             write_command(dst, self.args_iter(), self.cursor.unwrap_or(0)).unwrap();
         } else {
             write_count(dst, self.args.len()).unwrap();
@@ -676,6 +685,10 @@ impl Cmd {
     #[inline]
     pub fn in_scan_mode(&self) -> bool {
         self.cursor.is_some()
+    }
+
+    pub(crate) fn data_is_complete(&self) -> bool {
+        !self.buffering && !self.in_scan_mode()
     }
 
     /// Sends the command as query to the connection and converts the
@@ -910,6 +923,7 @@ mod tests {
         cmd.arg(42).arg(args);
 
         let packed_command = cmd.get_packed_command();
+        assert_eq!(cmd_len(&cmd), packed_command.len());
         assert_eq!(
             packed_command,
             b"*5\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$2\r\n42\r\n$5\r\nphone\r\n$4\r\nbarz\r\n",
@@ -929,6 +943,7 @@ mod tests {
             .cursor_arg(512);
 
         let packed_command = cmd.get_packed_command();
+        assert_eq!(cmd_len(&cmd), packed_command.len());
         assert_eq!(
             packed_command,
             b"*6\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$2\r\n42\r\n$5\r\nphone\r\n$4\r\nbarz\r\n$3\r\n512\r\n",

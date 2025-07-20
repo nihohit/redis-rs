@@ -1,13 +1,13 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 #[cfg(feature = "cache-aio")]
 use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
+use crate::cmd::{count_digits, Cmd};
+use crate::parser::ValueCodec;
+use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
     aio::{check_resp3, setup_connection},
     cmd,
-    cmd::Cmd,
     errors::{closed_connection_error, RedisError},
-    parser::ValueCodec,
-    types::{RedisFuture, RedisResult, Value},
     AsyncConnectionConfig, ProtocolVersion, PushInfo, RedisConnectionInfo, ToRedisArgs,
 };
 use ::tokio::{
@@ -65,6 +65,11 @@ impl ResponseAggregate {
     }
 }
 
+enum Input {
+    Cmd { arg_count: usize, data: Vec<u8> },
+    Pipeline(Vec<u8>),
+}
+
 struct InFlight {
     output: PipelineOutput,
     response_aggregate: ResponseAggregate,
@@ -72,7 +77,7 @@ struct InFlight {
 
 // A single message sent through the pipeline
 struct PipelineMessage {
-    input: Vec<u8>,
+    input: Input,
     output: PipelineOutput,
     // If `None`, this is a single request, not a pipeline of multiple requests.
     // If `Some`, the first value is the number of responses to skip,
@@ -294,14 +299,28 @@ where
             return Ok(());
         }
 
-        let self_ = self.as_mut().project();
+        let mut self_ = self.as_mut().project();
 
         if let Some(err) = self_.error.take() {
             let _ = output.send(Err(err));
             return Err(());
         }
 
-        match self_.sink_stream.start_send(input) {
+        let data = match input {
+            Input::Cmd { arg_count, data } => {
+                let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
+                crate::cmd::write_count(&mut vec, arg_count).unwrap();
+                match self_.sink_stream.as_mut().start_send(vec) {
+                    Ok(()) => data,
+                    Err(err) => {
+                        let _ = output.send(Err(err));
+                        return Err(());
+                    }
+                }
+            }
+            Input::Pipeline(items) => items,
+        };
+        match self_.sink_stream.start_send(data) {
             Ok(()) => {
                 let response_aggregate = ResponseAggregate::new(expectation);
                 let entry = InFlight {
@@ -379,7 +398,7 @@ impl Pipeline {
 
     async fn send_recv(
         &mut self,
-        input: Vec<u8>,
+        input: Input,
         // If `None`, this is a single request, not a pipeline of multiple requests.
         // If `Some`, the value inside defines how the response should look like
         expectation: Option<PipelineResponseExpectation>,
@@ -563,7 +582,7 @@ impl MultiplexedConnection {
                     let result = self
                         .pipeline
                         .send_recv(
-                            pipeline.get_packed_pipeline(),
+                            Input::Pipeline(pipeline.get_packed_pipeline()),
                             Some(PipelineResponseExpectation {
                                 skipped_response_count: 0,
                                 expected_response_count: pipeline.commands.len(),
@@ -579,7 +598,18 @@ impl MultiplexedConnection {
             }
         }
         self.pipeline
-            .send_recv(cmd.get_packed_command(), None, self.response_timeout)
+            .send_recv(
+                if cmd.data_is_complete() {
+                    Input::Cmd {
+                        arg_count: cmd.args.len(),
+                        data: cmd.data.clone(),
+                    }
+                } else {
+                    Input::Pipeline(cmd.get_packed_command())
+                },
+                None,
+                self.response_timeout,
+            )
             .await
     }
 
@@ -588,18 +618,18 @@ impl MultiplexedConnection {
     /// pipelining.
     pub async fn send_packed_commands(
         &mut self,
-        cmd: &crate::Pipeline,
+        pipeline: &crate::Pipeline,
         offset: usize,
         count: usize,
     ) -> RedisResult<Vec<Value>> {
         #[cfg(feature = "cache-aio")]
         if let Some(cache_manager) = &self.cache_manager {
             let (cacheable_pipeline, pipeline, (skipped_response_count, expected_response_count)) =
-                cache_manager.get_cached_pipeline(cmd);
+                cache_manager.get_cached_pipeline(pipeline);
             let result = self
                 .pipeline
                 .send_recv(
-                    pipeline.get_packed_pipeline(),
+                    Input::Pipeline(pipeline.get_packed_pipeline()),
                     Some(PipelineResponseExpectation {
                         skipped_response_count,
                         expected_response_count,
@@ -614,11 +644,11 @@ impl MultiplexedConnection {
         let value = self
             .pipeline
             .send_recv(
-                cmd.get_packed_pipeline(),
+                Input::Pipeline(pipeline.get_packed_pipeline()),
                 Some(PipelineResponseExpectation {
                     skipped_response_count: offset,
                     expected_response_count: count,
-                    is_transaction: cmd.is_transaction(),
+                    is_transaction: pipeline.is_transaction(),
                 }),
                 self.response_timeout,
             )
