@@ -1979,32 +1979,32 @@ impl<'a> PubSub<'a> {
 
     /// Subscribes to a new channel(s).    
     pub fn subscribe<T: ToRedisArgs>(&mut self, channel: T) -> RedisResult<()> {
-        self.cache_messages_until_received_response(cmd("SUBSCRIBE").arg(channel), true)?;
+        self.cache_messages_until_received_response(&mut cmd("SUBSCRIBE").arg(channel), true)?;
         Ok(())
     }
 
     /// Subscribes to new channel(s) with pattern(s).
     pub fn psubscribe<T: ToRedisArgs>(&mut self, pchannel: T) -> RedisResult<()> {
-        self.cache_messages_until_received_response(cmd("PSUBSCRIBE").arg(pchannel), true)?;
+        self.cache_messages_until_received_response(&mut cmd("PSUBSCRIBE").arg(pchannel), true)?;
         Ok(())
     }
 
     /// Unsubscribes from a channel(s).
     pub fn unsubscribe<T: ToRedisArgs>(&mut self, channel: T) -> RedisResult<()> {
-        self.cache_messages_until_received_response(cmd("UNSUBSCRIBE").arg(channel), true)?;
+        self.cache_messages_until_received_response(&mut cmd("UNSUBSCRIBE").arg(channel), true)?;
         Ok(())
     }
 
     /// Unsubscribes from channel pattern(s).
     pub fn punsubscribe<T: ToRedisArgs>(&mut self, pchannel: T) -> RedisResult<()> {
-        self.cache_messages_until_received_response(cmd("PUNSUBSCRIBE").arg(pchannel), true)?;
+        self.cache_messages_until_received_response(&mut cmd("PUNSUBSCRIBE").arg(pchannel), true)?;
         Ok(())
     }
 
     /// Sends a ping with a message to the server
     pub fn ping_message<T: FromRedisValue>(&mut self, message: impl ToRedisArgs) -> RedisResult<T> {
         Ok(from_owned_redis_value(
-            self.cache_messages_until_received_response(cmd("PING").arg(message), false)?,
+            self.cache_messages_until_received_response(cmd("PING").arg_mut(message), false)?,
         )?)
     }
     /// Sends a ping to the server

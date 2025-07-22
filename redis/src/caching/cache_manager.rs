@@ -122,10 +122,9 @@ impl CacheManager {
         json_path_key: Option<&[u8]>,
     ) {
         buffer.clear();
-        buffer.arg(single_command_name);
-        buffer.arg(redis_key);
+        buffer.arg_mut(single_command_name).arg_mut(redis_key);
         if let Some(json_path_key) = json_path_key {
-            buffer.arg(json_path_key);
+            buffer.arg_mut(json_path_key);
         }
     }
 

@@ -618,6 +618,13 @@ impl Cmd {
         self
     }
 
+    #[inline]
+    #[must_use]
+    pub(crate) fn arg_mut<T: ToRedisArgs>(&mut self, arg: T) -> &mut Self {
+        arg.write_redis_args(self);
+        self
+    }
+
     /// Works similar to `arg` but adds a cursor argument.
     ///
     /// This is always an integer and also flips the command implementation to support a

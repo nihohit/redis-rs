@@ -131,9 +131,9 @@ where
 {
     let mut new_cmd = Cmd::new();
     let command_length = 1; // TODO - the +1 should change if we have multi-slot commands with 2 command words.
-    new_cmd.arg(original_cmd.arg_idx(0));
+    new_cmd.arg_mut(original_cmd.arg_idx(0));
     for index in indices {
-        new_cmd.arg(original_cmd.arg_idx(index + command_length));
+        new_cmd.arg_mut(original_cmd.arg_idx(index + command_length));
     }
     new_cmd
 }
