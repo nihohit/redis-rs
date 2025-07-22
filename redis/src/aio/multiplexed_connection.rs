@@ -570,10 +570,10 @@ impl MultiplexedConnection {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
+    pub async fn send_packed_command(&mut self, cmd: Cmd) -> RedisResult<Value> {
         #[cfg(feature = "cache-aio")]
         if let Some(cache_manager) = &self.cache_manager {
-            match cache_manager.get_cached_cmd(cmd) {
+            match cache_manager.get_cached_cmd(&cmd) {
                 PrepareCacheResult::Cached(value) => return Ok(value),
                 PrepareCacheResult::NotCached(cacheable_command) => {
                     let mut pipeline = crate::Pipeline::new();
