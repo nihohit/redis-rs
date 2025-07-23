@@ -88,6 +88,39 @@ pub struct Cmd {
     cache: Option<CommandCacheConfig>,
 }
 
+#[cfg(feature = "bytes")]
+pub(crate) mod frozen_cmd {
+    use super::*;
+    use bytes::Bytes;
+    use std::sync::Arc;
+
+    #[derive(Clone)]
+
+    pub struct FrozenCmd {
+        pub(crate) data: Bytes,
+        // Arg::Simple contains the range for each argument
+        pub(crate) args: Arc<[Arg<Range<usize>>]>,
+        cursor: Option<u64>,
+        // If it's true command's response won't be read from socket. Useful for Pub/Sub.
+        no_response: bool,
+        #[cfg(feature = "cache-aio")]
+        cache: Option<CommandCacheConfig>,
+    }
+
+    impl Cmd {
+        pub(crate) fn freeze(self) -> FrozenCmd {
+            FrozenCmd {
+                data: self.data.into(),
+                args: Arc::from(self.args),
+                cursor: self.cursor,
+                no_response: self.no_response,
+                #[cfg(feature = "cache-aio")]
+                cache: self.cache,
+            }
+        }
+    }
+}
+
 /// Represents a redis iterator.
 pub struct Iter<'a, T: FromRedisValue> {
     iter: CheckedIter<'a, T>,
