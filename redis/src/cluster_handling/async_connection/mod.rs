@@ -115,7 +115,7 @@ use crate::{
         slot_map::{Slot, SlotMap},
         topology::parse_slots,
     },
-    cmd::{self, frozen_cmd::FrozenCmd},
+    cmd::cmd,
     errors::closed_connection_error,
     subscription_tracker::SubscriptionTracker,
     AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError,
@@ -871,7 +871,7 @@ where
     }
 
     async fn try_cmd_request(
-        cmd: FrozenCmd,
+        cmd: Arc<Cmd>,
         routing: InternalRoutingInfo<C>,
         core: Core<C>,
     ) -> OperationResult {
@@ -891,7 +891,9 @@ where
         match Self::get_connection(route, core).await {
             Ok((addr, mut conn)) => (
                 addr.into(),
-                conn.req_packed_command(cmd).await.map(Response::Single),
+                conn.req_packed_command((*cmd).clone())
+                    .await
+                    .map(Response::Single),
             ),
             Err(err) => (OperationTarget::NotFound, Err(err)),
         }
