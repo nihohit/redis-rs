@@ -674,7 +674,7 @@ fn test_connection_manager_maintains_statistics_after_crashes(
             drop(ctx);
 
             let result: Result<redis::Value, RedisError> =
-                manager.send_packed_command(&redis::cmd("PING")).await;
+                manager.send_packed_command(redis::cmd("PING")).await;
             assert!(result.unwrap_err().is_unrecoverable_error());
 
             let _server =
@@ -725,7 +725,7 @@ fn test_cache_async_cluster_reconnect_all_nodes(#[case] runtime: RuntimeType) {
             // disconnect from all nodes
             let _ = con
                 .route_command(
-                    &redis::cmd("QUIT"),
+                    redis::cmd("QUIT"),
                     redis::cluster_routing::RoutingInfo::MultiNode((
                         redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes,
                         None,
@@ -735,7 +735,7 @@ fn test_cache_async_cluster_reconnect_all_nodes(#[case] runtime: RuntimeType) {
             // send ping so connections knows they have been disconnected
             let _ = con
                 .route_command(
-                    &redis::cmd("PING"),
+                    redis::cmd("PING"),
                     redis::cluster_routing::RoutingInfo::MultiNode((
                         redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes,
                         None,
@@ -991,7 +991,7 @@ fn test_cache_async_cluster_slot_change(
 fn get_cmd(name: &str, enable_opt_in: bool) -> redis::Cmd {
     let mut cmd = redis::cmd(name);
     if enable_opt_in {
-        cmd.set_cache_config(CommandCacheConfig::new().set_enable_cache(true));
+        cmd = cmd.set_cache_config(CommandCacheConfig::new().set_enable_cache(true));
     }
     cmd
 }

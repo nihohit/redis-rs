@@ -1010,9 +1010,12 @@ mod tests {
     #[test]
     #[cfg(feature = "cache-aio")]
     fn test_cmd_clean_cache_aio() {
-        let mut cmd = Cmd::new().arg("key").arg("value").cursor_arg(24);
+        let mut cmd = Cmd::new()
+            .arg("key")
+            .arg("value")
+            .cursor_arg(24)
+            .set_cache_config(crate::CommandCacheConfig::default());
         cmd.set_no_response(true);
-        cmd.set_cache_config(crate::CommandCacheConfig::default());
         cmd.clear();
 
         // Everything should be reset, but the capacity should still be there
@@ -1158,11 +1161,11 @@ mod tests {
         let mut c = Cmd::new();
         assert_eq!(c.arg_idx(0), None);
 
-        c.arg("SET");
+        c = c.arg("SET");
         assert_eq!(c.arg_idx(0), Some(&b"SET"[..]));
         assert_eq!(c.arg_idx(1), None);
 
-        c.arg("foo").arg("42");
+        c = c.arg("foo").arg("42");
         assert_eq!(c.arg_idx(1), Some(&b"foo"[..]));
         assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
         assert_eq!(c.arg_idx(3), None);

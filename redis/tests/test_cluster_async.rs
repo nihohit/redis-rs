@@ -145,7 +145,7 @@ mod cluster_async {
                 let routing = RoutingInfo::SingleNode(single_node_route);
                 assert_eq!(
                     connection
-                        .route_command(&redis::cmd("FLUSHALL"), routing)
+                        .route_command(redis::cmd("FLUSHALL"), routing)
                         .await
                         .unwrap(),
                     Value::Okay
@@ -176,7 +176,7 @@ mod cluster_async {
                 cmd.arg("Clients");
                 let value = connection
                     .route_command(
-                        &cmd,
+                        cmd,
                         RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllNodes, None)),
                     )
                     .await
@@ -192,7 +192,7 @@ mod cluster_async {
 
                 let value = connection
                     .route_command(
-                        &cmd,
+                        cmd,
                         RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress { host, port }),
                     )
                     .await
@@ -1030,7 +1030,8 @@ mod cluster_async {
         assert_eq!(connection_count_clone.load(Ordering::Relaxed), 4);
 
         let value = runtime.block_on(connection.route_command(
-            &cmd("ECHO"),
+            cmd,
+            ("ECHO"),
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6379,
@@ -1044,7 +1045,8 @@ mod cluster_async {
         );
 
         let value = runtime.block_on(connection.route_command(
-            &cmd("ECHO"),
+            cmd,
+            ("ECHO"),
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6379,
@@ -1494,7 +1496,7 @@ mod cluster_async {
         let mut cmd = cmd("GET");
         cmd.arg("test");
         let _ = runtime.block_on(connection.route_command(
-            &cmd,
+            cmd,
             RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllMasters, None)),
         ));
         {
@@ -1505,7 +1507,7 @@ mod cluster_async {
         }
 
         let _ = runtime.block_on(connection.route_command(
-            &cmd,
+            cmd,
             RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllNodes, None)),
         ));
         {
@@ -1516,7 +1518,7 @@ mod cluster_async {
         }
 
         let _ = runtime.block_on(connection.route_command(
-            &cmd,
+            cmd,
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6382,
@@ -1870,8 +1872,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_split_multi_shard_command_and_combine_arrays_of_values() {
         let name = "test_async_cluster_split_multi_shard_command_and_combine_arrays_of_values";
-        let mut cmd = cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz");
+        let cmd = cmd("MGET").arg("foo").arg("bar").arg("baz");
         let MockEnv {
             runtime,
             async_connection: mut connection,
@@ -1910,8 +1911,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_handle_asking_error_in_split_multi_shard_command() {
         let name = "test_async_cluster_handle_asking_error_in_split_multi_shard_command";
-        let mut cmd = cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz");
+        let cmd = cmd("MGET").arg("foo").arg("bar").arg("baz");
         let asking_called = Arc::new(AtomicU16::new(0));
         let asking_called_cloned = asking_called.clone();
         let MockEnv {
@@ -2114,12 +2114,12 @@ mod cluster_async {
                 for _ in 0..5 {
                     let cmd = cmd("PING");
                     let result = connection
-                        .route_command(&cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
+                        .route_command(cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
                         .await;
                     // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                     assert!(result.is_err());
                     // This will route to all nodes - different path through the code.
-                    let result = connection.req_packed_command(&cmd).await;
+                    let result = connection.req_packed_command(cmd).await;
                     // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                     assert!(result.is_err());
                 }
@@ -2148,13 +2148,13 @@ mod cluster_async {
                 let cmd = cmd("PING");
 
                 let result = connection
-                    .route_command(&cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
+                    .route_command(cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
                     .await;
                 // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                 assert!(result.is_err());
 
                 // This will route to all nodes - different path through the code.
-                let result = connection.req_packed_command(&cmd).await;
+                let result = connection.req_packed_command(cmd).await;
                 // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                 assert!(result.is_err());
 
@@ -2163,7 +2163,7 @@ mod cluster_async {
                     ..Default::default()
                 });
 
-                let result = connection.req_packed_command(&cmd).await.unwrap();
+                let result = connection.req_packed_command(cmd).await.unwrap();
                 assert_eq!(result, Value::SimpleString("PONG".to_string()));
 
                 Ok::<_, RedisError>(())
@@ -2200,7 +2200,7 @@ mod cluster_async {
                 // explicitly route to all primaries and request all succeeded
                 let result = connection
                     .route_command(
-                        &cmd,
+                        cmd,
                         RoutingInfo::MultiNode((
                             MultipleNodeRoutingInfo::AllMasters,
                             Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),
@@ -2322,14 +2322,9 @@ mod cluster_async {
 
                 assert_eq!(count_ids(&mut conn).await.unwrap(), 2);
 
-                let mut cmd = cmd("BLPOP");
+                let cmd = cmd("BLPOP").arg("LIST").arg(0);
                 let command_that_blocks = Box::pin(async move {
-                    () = cmd
-                        .arg("LIST")
-                        .arg(0)
-                        .exec_async(&mut connection_to_dispose_of)
-                        .await
-                        .unwrap();
+                    () = cmd.exec_async(&mut connection_to_dispose_of).await.unwrap();
                     unreachable!("This shouldn't happen");
                 })
                 .fuse();
@@ -2938,7 +2933,7 @@ mod cluster_async {
                     let cmd = cmd("PING");
                     let _ = pubsub_conn
                         .route_command(
-                            &cmd,
+                            cmd,
                             RoutingInfo::MultiNode((
                                 MultipleNodeRoutingInfo::AllMasters,
                                 Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),

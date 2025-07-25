@@ -139,14 +139,14 @@ mod tests {
     fn test_add_and_remove_subscriptions() {
         let mut tracker = SubscriptionTracker::default();
 
-        tracker.update_with_cmd(cmd("subscribe").arg("foo").arg("bar"));
-        tracker.update_with_cmd(cmd("PSUBSCRIBE").arg("fo*o").arg("b*ar"));
-        tracker.update_with_cmd(cmd("SSUBSCRIBE").arg("sfoo").arg("sbar"));
-        tracker.update_with_cmd(cmd("unsubscribe").arg("foo"));
-        tracker.update_with_cmd(cmd("Punsubscribe").arg("b*ar"));
-        tracker.update_with_cmd(cmd("Sunsubscribe").arg("sfoo").arg("SBAR"));
+        tracker.update_with_cmd(&cmd("subscribe").arg("foo").arg("bar"));
+        tracker.update_with_cmd(&cmd("PSUBSCRIBE").arg("fo*o").arg("b*ar"));
+        tracker.update_with_cmd(&cmd("SSUBSCRIBE").arg("sfoo").arg("sbar"));
+        tracker.update_with_cmd(&cmd("unsubscribe").arg("foo"));
+        tracker.update_with_cmd(&cmd("Punsubscribe").arg("b*ar"));
+        tracker.update_with_cmd(&cmd("Sunsubscribe").arg("sfoo").arg("SBAR"));
         // ignore irrelevant commands
-        tracker.update_with_cmd(cmd("GET").arg("sfoo"));
+        tracker.update_with_cmd(&cmd("GET").arg("sfoo"));
 
         let result = tracker.get_subscription_pipeline();
         let mut expected = pipe();
@@ -169,10 +169,10 @@ mod tests {
     fn test_skip_empty_subscriptions() {
         let mut tracker = SubscriptionTracker::default();
 
-        tracker.update_with_cmd(cmd("subscribe").arg("foo").arg("bar"));
-        tracker.update_with_cmd(cmd("PSUBSCRIBE").arg("fo*o").arg("b*ar"));
-        tracker.update_with_cmd(cmd("unsubscribe").arg("foo").arg("bar"));
-        tracker.update_with_cmd(cmd("punsubscribe").arg("fo*o"));
+        tracker.update_with_cmd(&cmd("subscribe").arg("foo").arg("bar"));
+        tracker.update_with_cmd(&cmd("PSUBSCRIBE").arg("fo*o").arg("b*ar"));
+        tracker.update_with_cmd(&cmd("unsubscribe").arg("foo").arg("bar"));
+        tracker.update_with_cmd(&cmd("punsubscribe").arg("fo*o"));
 
         let result = tracker.get_subscription_pipeline();
         let mut expected = pipe();
@@ -230,8 +230,8 @@ mod tests {
     fn test_only_unsubscribe_from_existing_subscriptions() {
         let mut tracker = SubscriptionTracker::default();
 
-        tracker.update_with_cmd(cmd("unsubscribe").arg("foo"));
-        tracker.update_with_cmd(cmd("subscribe").arg("foo"));
+        tracker.update_with_cmd(&cmd("unsubscribe").arg("foo"));
+        tracker.update_with_cmd(&cmd("subscribe").arg("foo"));
 
         let result = tracker.get_subscription_pipeline();
         let mut expected = pipe();

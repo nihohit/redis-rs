@@ -1017,19 +1017,16 @@ mod tests_routing {
 
     #[test]
     fn test_routing_info_mixed_capatalization() {
-        let mut upper = cmd("XREAD");
-        upper.arg("STREAMS").arg("foo").arg(0);
+        let upper = cmd("XREAD").arg("STREAMS").arg("foo").arg(0);
 
-        let mut lower = cmd("xread");
-        lower.arg("streams").arg("foo").arg(0);
+        let lower = cmd("xread").arg("streams").arg("foo").arg(0);
 
         assert_eq!(
             RoutingInfo::for_routable(&upper).unwrap(),
             RoutingInfo::for_routable(&lower).unwrap()
         );
 
-        let mut mixed = cmd("xReAd");
-        mixed.arg("StReAmS").arg("foo").arg(0);
+        let mixed = cmd("xReAd").arg("StReAmS").arg("foo").arg(0);
 
         assert_eq!(
             RoutingInfo::for_routable(&lower).unwrap(),
@@ -1042,44 +1039,36 @@ mod tests_routing {
         let mut test_cmds = vec![];
 
         // RoutingInfo::AllMasters
-        let mut test_cmd = cmd("FLUSHALL");
-        test_cmd.arg("");
-        test_cmds.push(test_cmd);
+        let mut test_cmd = cmd("FLUSHALL").arg("");
+        test_cmds.push(test_cmd.clone());
 
         // RoutingInfo::AllNodes
-        test_cmd = cmd("ECHO");
-        test_cmd.arg("");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("ECHO").arg("");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 2nd arg ("42")
-        test_cmd = cmd("SET");
-        test_cmd.arg("42");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("SET").arg("42");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 3rd arg ("FOOBAR")
-        test_cmd = cmd("XINFO");
-        test_cmd.arg("GROUPS").arg("FOOBAR");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("XINFO").arg("GROUPS").arg("FOOBAR");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 3rd or 4th arg (3rd = "0" == RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
-        test_cmd = cmd("EVAL");
-        test_cmd.arg("FOO").arg("0").arg("BAR");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("EVAL").arg("FOO").arg("0").arg("BAR");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 3rd or 4th arg (3rd != "0" == RoutingInfo::Slot)
-        test_cmd = cmd("EVAL");
-        test_cmd.arg("FOO").arg("4").arg("BAR");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("EVAL").arg("FOO").arg("4").arg("BAR");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key position is variable, 3rd arg
-        test_cmd = cmd("XREAD");
-        test_cmd.arg("STREAMS").arg("4");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("XREAD").arg("STREAMS").arg("4");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key position is variable, 4th arg
-        test_cmd = cmd("XREAD");
-        test_cmd.arg("FOO").arg("STREAMS").arg("4");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("XREAD").arg("FOO").arg("STREAMS").arg("4");
+        test_cmds.push(test_cmd.clone());
 
         for cmd in test_cmds {
             let value = parse_redis_value(&cmd.get_packed_command()).unwrap();
@@ -1262,8 +1251,7 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_keys_only() {
-        let mut cmd = cmd("DEL");
-        cmd.arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
+        let cmd = cmd("DEL").arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
         let routing = RoutingInfo::for_routable(&cmd);
         let mut expected = std::collections::HashMap::new();
         expected.insert(Route(4813, SlotAddr::Master), vec![2]);
@@ -1278,8 +1266,11 @@ mod tests_routing {
             "expected={expected:?}\nrouting={routing:?}"
         );
 
-        let mut cmd = crate::cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
+        let cmd = crate::cmd("MGET")
+            .arg("foo")
+            .arg("bar")
+            .arg("baz")
+            .arg("{bar}vaz");
         let routing = RoutingInfo::for_routable(&cmd);
         let mut expected = std::collections::HashMap::new();
         expected.insert(Route(4813, SlotAddr::ReplicaOptional), vec![2]);
@@ -1297,8 +1288,8 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_key_value_pairs() {
-        let mut cmd = cmd("MSET");
-        cmd.arg("foo") // key slot 12182
+        let cmd = cmd("MSET")
+        .arg("foo") // key slot 12182
             .arg("bar") // value
             .arg("foo2") // key slot 1044
             .arg("bar2")    // value
@@ -1320,8 +1311,7 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_keys_and_path() {
-        let mut cmd = cmd("JSON.MGET");
-        cmd.arg("foo") // key slot 12182
+        let cmd = cmd("JSON.MGET").arg("foo") // key slot 12182
             .arg("bar") // key slot 5061
             .arg("baz") // key slot 4813
             .arg("{bar}vaz") // key slot 5061
@@ -1343,8 +1333,7 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_key_with_two_arg_triples() {
-        let mut cmd = cmd("JSON.MSET");
-        cmd
+        let cmd = cmd("JSON.MSET")
             .arg("foo") // key slot 12182
             .arg("$.a") // path
             .arg("bar") // value
@@ -1370,12 +1359,7 @@ mod tests_routing {
 
     #[test]
     fn test_command_creation_for_multi_shard() {
-        let mut original_cmd = cmd("DEL");
-        original_cmd
-            .arg("foo")
-            .arg("bar")
-            .arg("baz")
-            .arg("{bar}vaz");
+        let original_cmd = cmd("DEL").arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
         let routing = RoutingInfo::for_routable(&original_cmd);
         let expected = [vec![0], vec![1, 3], vec![2]];
 
@@ -1401,8 +1385,7 @@ mod tests_routing {
 
     #[test]
     fn test_combine_multi_shard_to_single_node_when_all_keys_are_in_same_slot() {
-        let mut cmd = cmd("DEL");
-        cmd.arg("foo").arg("{foo}bar").arg("{foo}baz");
+        let cmd = cmd("DEL").arg("foo").arg("{foo}bar").arg("{foo}baz");
         let routing = RoutingInfo::for_routable(&cmd);
 
         assert!(
