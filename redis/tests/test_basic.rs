@@ -130,8 +130,7 @@ mod basic {
         let password = "bar";
 
         // adds a "foo" user with "GET permissions"
-        let mut set_user_cmd = redis::Cmd::new();
-        set_user_cmd
+        let set_user_cmd = redis::Cmd::new()
             .arg("ACL")
             .arg("SETUSER")
             .arg(username)

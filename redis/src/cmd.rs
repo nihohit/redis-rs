@@ -652,7 +652,6 @@ impl Cmd {
     }
 
     #[inline]
-    #[must_use]
     pub(crate) fn arg_mut<T: ToRedisArgs>(&mut self, arg: T) -> &mut Self {
         arg.write_redis_args(self);
         self
@@ -895,7 +894,7 @@ impl Cmd {
     /// Changes caching behaviour for this specific command.
     #[cfg(feature = "cache-aio")]
     #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-    pub fn set_cache_config(&mut self, command_cache_config: CommandCacheConfig) -> &mut Cmd {
+    pub fn set_cache_config(mut self, command_cache_config: CommandCacheConfig) -> Cmd {
         self.cache = Some(command_cache_config);
         self
     }
@@ -957,11 +956,10 @@ mod tests {
 
     #[rstest]
     fn test_cmd_packed_command_simple_args(#[values(false, true)] give_size: bool) {
-        let mut cmd = Cmd::new();
         let args: &[&[u8]] = &[b"phone", b"barz"];
-        cmd.arg("key")
-            .write_arg_fmt("value", give_size.then_some(5));
-        cmd.arg(42).arg(args);
+        let mut cmd = Cmd::new().arg("key");
+        cmd.write_arg_fmt("value", give_size.then_some(5));
+        cmd = cmd.arg(42).arg(args);
 
         let packed_command = cmd.get_packed_command();
         assert_eq!(cmd_len(&cmd), packed_command.len());
@@ -975,9 +973,9 @@ mod tests {
 
     #[test]
     fn test_cmd_packed_command_with_cursor() {
-        let mut cmd = Cmd::new();
         let args: &[&[u8]] = &[b"phone", b"barz"];
-        cmd.arg("key")
+        let cmd = Cmd::new()
+            .arg("key")
             .arg("value")
             .arg(42)
             .arg(args)
@@ -995,10 +993,8 @@ mod tests {
 
     #[test]
     fn test_cmd_clean() {
-        let mut cmd = Cmd::new();
-        cmd.arg("key").arg("value");
+        let mut cmd = Cmd::new().arg("key").arg("value").cursor_arg(24);
         cmd.set_no_response(true);
-        cmd.cursor_arg(24);
         cmd.clear();
 
         // Everything should be reset, but the capacity should still be there
@@ -1014,10 +1010,8 @@ mod tests {
     #[test]
     #[cfg(feature = "cache-aio")]
     fn test_cmd_clean_cache_aio() {
-        let mut cmd = Cmd::new();
-        cmd.arg("key").arg("value");
+        let mut cmd = Cmd::new().arg("key").arg("value").cursor_arg(24);
         cmd.set_no_response(true);
-        cmd.cursor_arg(24);
         cmd.set_cache_config(crate::CommandCacheConfig::default());
         cmd.clear();
 

@@ -345,7 +345,7 @@ impl Pipeline {
     #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
     pub fn set_cache_config(&mut self, command_cache_config: CommandCacheConfig) -> &mut Self {
         let cmd = self.get_last_command();
-        cmd.set_cache_config(command_cache_config);
+        *cmd = std::mem::take(cmd).set_cache_config(command_cache_config);
         self
     }
 }
