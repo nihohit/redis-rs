@@ -33,7 +33,7 @@ pub enum Arg<D> {
 /// let config = CommandCacheConfig::new()
 ///     .set_enable_cache(true)
 ///     .set_client_side_ttl(ttl);
-/// let command = Cmd::new().arg("GET").arg("key").set_cache_config(config);
+/// let command = redis::cmd("GET").arg("key").set_cache_config(config);
 /// ```
 #[cfg(feature = "cache-aio")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
@@ -547,7 +547,7 @@ impl Default for Cmd {
 /// Basic example:
 ///
 /// ```rust
-/// redis::Cmd::new().arg("SET").arg("my_key").arg(42);
+/// redis::cmd("SET").arg("my_key").arg(42);
 /// ```
 ///
 /// There is also a helper function called `cmd` which makes it a
@@ -957,7 +957,7 @@ mod tests {
     #[rstest]
     fn test_cmd_packed_command_simple_args(#[values(false, true)] give_size: bool) {
         let args: &[&[u8]] = &[b"phone", b"barz"];
-        let mut cmd = Cmd::new().arg("key");
+        let mut cmd = cmd("key");
         cmd.write_arg_fmt("value", give_size.then_some(5));
         cmd = cmd.arg(42).arg(args);
 
@@ -974,12 +974,7 @@ mod tests {
     #[test]
     fn test_cmd_packed_command_with_cursor() {
         let args: &[&[u8]] = &[b"phone", b"barz"];
-        let cmd = Cmd::new()
-            .arg("key")
-            .arg("value")
-            .arg(42)
-            .arg(args)
-            .cursor_arg(512);
+        let cmd = cmd("key").arg("value").arg(42).arg(args).cursor_arg(512);
 
         let packed_command = cmd.get_packed_command();
         assert_eq!(cmd_len(&cmd), packed_command.len());
@@ -993,7 +988,7 @@ mod tests {
 
     #[test]
     fn test_cmd_clean() {
-        let mut cmd = Cmd::new().arg("key").arg("value").cursor_arg(24);
+        let mut cmd = cmd("key").arg("value").cursor_arg(24);
         cmd.set_no_response(true);
         cmd.clear();
 
@@ -1010,8 +1005,7 @@ mod tests {
     #[test]
     #[cfg(feature = "cache-aio")]
     fn test_cmd_clean_cache_aio() {
-        let mut cmd = Cmd::new()
-            .arg("key")
+        let mut cmd = cmd("key")
             .arg("value")
             .cursor_arg(24)
             .set_cache_config(crate::CommandCacheConfig::default());

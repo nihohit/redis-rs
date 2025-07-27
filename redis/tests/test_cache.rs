@@ -651,8 +651,7 @@ fn test_connection_manager_maintains_statistics_after_crashes(
                 .set_max_delay(Duration::from_millis(1))
                 .set_cache_config(cache_config);
 
-            let mut get = get_cmd("GET", test_with_optin);
-            get.arg("key_1");
+            let get = get_cmd("GET", test_with_optin).arg("key_1");
 
             let mut manager = ctx
                 .client
@@ -660,12 +659,12 @@ fn test_connection_manager_maintains_statistics_after_crashes(
                 .await
                 .unwrap();
 
-            let val: Option<String> = get.query_async(&mut manager).await.unwrap();
+            let val: Option<String> = get.clone().query_async(&mut manager).await.unwrap();
             assert_eq!(val, None);
             assert_hit!(&manager, 0);
             assert_miss!(&manager, 1);
 
-            let val: Option<String> = get.query_async(&mut manager).await.unwrap();
+            let val: Option<String> = get.clone().query_async(&mut manager).await.unwrap();
             assert_eq!(val, None);
             assert_hit!(&manager, 1);
             assert_miss!(&manager, 1);
@@ -681,7 +680,7 @@ fn test_connection_manager_maintains_statistics_after_crashes(
                 redis_test::server::RedisServer::new_with_addr_and_modules(addr, &[], false);
 
             loop {
-                if manager.send_packed_command(&get).await.is_ok() {
+                if manager.send_packed_command(get.clone()).await.is_ok() {
                     break;
                 }
             }

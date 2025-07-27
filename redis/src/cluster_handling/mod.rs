@@ -15,7 +15,7 @@ pub mod sync_connection;
 pub(crate) mod topology;
 
 pub(crate) fn slot_cmd() -> Cmd {
-    Cmd::new().arg("CLUSTER").arg("SLOTS")
+    crate::cmd("CLUSTER").arg("SLOTS")
 }
 
 pub(crate) fn split_node_address(node: &str) -> RedisResult<(&str, u16)> {

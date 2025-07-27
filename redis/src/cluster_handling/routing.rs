@@ -1141,14 +1141,14 @@ mod tests_routing {
             cmd("EVALSHA").arg(r#"redis.call("PING");"#).arg(0),
         ] {
             assert_eq!(
-                RoutingInfo::for_routable(cmd),
+                RoutingInfo::for_routable(&cmd),
                 Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
             );
         }
 
         // While FCALL with N keys is expected to be routed to a specific node
         assert_eq!(
-            RoutingInfo::for_routable(cmd("FCALL").arg("foo").arg(1).arg("mykey")),
+            RoutingInfo::for_routable(&cmd("FCALL").arg("foo").arg(1).arg("mykey")),
             Some(RoutingInfo::SingleNode(
                 SingleNodeRoutingInfo::SpecificNode(Route::new(slot(b"mykey"), SlotAddr::Master))
             ))
@@ -1219,7 +1219,7 @@ mod tests_routing {
             ),
         ] {
             assert_eq!(
-                RoutingInfo::for_routable(cmd),
+                RoutingInfo::for_routable(&cmd),
                 expected,
                 "{}",
                 std::str::from_utf8(cmd.arg_idx(0).unwrap()).unwrap()

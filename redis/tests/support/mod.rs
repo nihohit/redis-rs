@@ -417,7 +417,7 @@ pub fn parse_version(info: InfoDict) -> Version {
 }
 
 fn get_version(conn: &mut impl redis::ConnectionLike) -> Version {
-    let info: InfoDict = redis::Cmd::new().arg("INFO").query(conn).unwrap();
+    let info: InfoDict = redis::cmd("INFO").query(conn).unwrap();
     parse_version(info)
 }
 

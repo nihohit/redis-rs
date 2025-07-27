@@ -231,8 +231,7 @@ mod basic_async {
                 let password = "bar";
 
                 // adds a "foo" user with "GET permissions"
-                let set_user_cmd = redis::Cmd::new()
-                    .arg("ACL")
+                let set_user_cmd = redis::cmd("ACL")
                     .arg("SETUSER")
                     .arg(username)
                     .arg("on")
@@ -722,7 +721,7 @@ mod basic_async {
             async move {
                 let mut connection = ctx.async_connection().await.unwrap();
                 connection.set_response_timeout(Duration::from_millis(1));
-                let cmd = redis::Cmd::new().arg("BLPOP").arg("foo").arg(0); // 0 timeout blocks indefinitely
+                let cmd = redis::cmd("BLPOP").arg("foo").arg(0); // 0 timeout blocks indefinitely
                 let result = connection.req_packed_command(cmd).await;
                 assert!(result.is_err());
                 assert!(result.unwrap_err().is_timeout());

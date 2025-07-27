@@ -151,7 +151,7 @@ impl CacheableCommand<'_> {
                 client_side_expire: _client_side_expire,
                 tail_args,
             } => {
-                let mut cmd = Cmd::new().arg(command_name);
+                let mut cmd = crate::cmd(command_name);
                 for command in commands {
                     cmd = cmd.arg(command.1.redis_key);
                 }
