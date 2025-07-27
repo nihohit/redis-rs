@@ -14,6 +14,7 @@ use ::tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot},
 };
+use bytes::Bytes;
 use futures_util::{
     future::{Future, FutureExt},
     ready,
@@ -66,7 +67,7 @@ impl ResponseAggregate {
 }
 
 enum Input {
-    Cmd { arg_count: usize, data: Vec<u8> },
+    Cmd { arg_count: usize, data: Bytes },
     Pipeline(Vec<u8>),
 }
 
@@ -601,7 +602,7 @@ impl MultiplexedConnection {
             .send_recv(
                 if cmd.data_is_complete() {
                     Input::Cmd {
-                        arg_count: cmd.args.len(),
+                        arg_count: cmd.args_iter().len(),
                         data: cmd.data.clone(),
                     }
                 } else {

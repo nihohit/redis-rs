@@ -73,12 +73,17 @@ impl Default for CommandCacheConfig {
     }
 }
 
+// enum Repr {
+//     Mutable {},
+//     Frozen {},
+// }
+
 /// Represents redis commands.
 #[derive(Clone)]
 pub struct Cmd {
-    pub(crate) data: Vec<u8>,
+    data: Vec<u8>,
     // Arg::Simple contains the range for each argument
-    pub(crate) args: Vec<Arg<Range<usize>>>,
+    args: Vec<Arg<Range<usize>>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
