@@ -204,6 +204,20 @@ pub struct AsyncIter<'a, T: FromRedisValue + 'a> {
     inner: IterOrFuture<'a, T>,
 }
 
+#[cfg(feature = "bytes")]
+#[derive(Clone)]
+pub struct FrozenCmd {
+    data: bytes::Bytes,
+    // Arg::Simple contains the range for each argument
+    args: std::sync::Arc<[Arg<Range<usize>>]>,
+    // If it's true command's response won't be read from socket. Useful for Pub/Sub.
+    no_response: bool,
+    #[cfg(feature = "cache-aio")]
+    cache: Option<CommandCacheConfig>,
+    // if true, then the data is the full serialized command. If not, its missing the arg count at the head of the command.
+    data_is_full_packaged_cmd: bool,
+}
+
 #[cfg(feature = "aio")]
 impl<'a, T: FromRedisValue + 'a> AsyncIterInner<'a, T> {
     async fn next_item(&mut self) -> Option<RedisResult<T>> {
@@ -830,7 +844,7 @@ impl Cmd {
         mut self,
         con: &'a mut (dyn AsyncConnection + Send),
     ) -> RedisResult<AsyncIter<'a, T>> {
-        let rv = con.req_packed_command(self.clone()).await?;
+        let rv = con.req_packed_command(self.clone().freeze()).await?;
 
         let batch = self.set_cursor_and_get_batch(rv)?;
 
@@ -908,6 +922,23 @@ impl Cmd {
     #[inline]
     pub(crate) fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
         &self.cache
+    }
+
+    #[cfg(feature = "bytes")]
+    pub fn freeze(self) -> FrozenCmd {
+        let data_is_full_packaged_cmd = self.data_is_complete();
+        let data = if self.data_is_complete() {
+            self.data.into()
+        } else {
+            self.get_packed_command().into()
+        };
+        FrozenCmd {
+            data,
+            args: std::sync::Arc::from(self.args),
+            no_response: self.no_response,
+            cache: self.cache,
+            data_is_full_packaged_cmd,
+        }
     }
 }
 
