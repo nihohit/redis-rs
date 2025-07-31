@@ -1,6 +1,7 @@
 use crate::{
-    cluster_handling::client::ClusterParams, connection::TlsConnParams, Cmd, ConnectionAddr,
-    ConnectionInfo, ErrorKind, RedisConnectionInfo, RedisError, RedisResult, TlsMode,
+    cluster_handling::client::ClusterParams, cmd::FrozenCmd, connection::TlsConnParams,
+    ConnectionAddr, ConnectionInfo, ErrorKind, RedisConnectionInfo, RedisError, RedisResult,
+    TlsMode,
 };
 
 use std::str::FromStr;
@@ -14,8 +15,8 @@ pub(crate) mod slot_map;
 pub mod sync_connection;
 pub(crate) mod topology;
 
-pub(crate) fn slot_cmd() -> Cmd {
-    crate::cmd("CLUSTER").arg("SLOTS")
+pub(crate) fn slot_cmd() -> FrozenCmd {
+    crate::cmd("CLUSTER").arg("SLOTS").freeze()
 }
 
 pub(crate) fn split_node_address(node: &str) -> RedisResult<(&str, u16)> {

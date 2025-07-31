@@ -4,7 +4,7 @@ use crate::caching::CacheManager;
 use crate::{
     aio::{check_resp3, ConnectionLike, MultiplexedConnection, Runtime},
     client::{DEFAULT_CONNECTION_TIMEOUT, DEFAULT_RESPONSE_TIMEOUT},
-    cmd,
+    cmd::{cmd, FrozenCmd},
     errors::RedisError,
     subscription_tracker::{SubscriptionAction, SubscriptionTracker},
     types::{RedisResult, Value},
@@ -497,7 +497,7 @@ impl ConnectionManager {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_command(&mut self, cmd: Cmd) -> RedisResult<Value> {
+    pub async fn send_packed_command(&mut self, cmd: FrozenCmd) -> RedisResult<Value> {
         // Clone connection to avoid having to lock the ArcSwap in write mode
         let guard = self.0.connection.load();
         let connection_result = (**guard).clone().await.map_err(|e| e.clone());

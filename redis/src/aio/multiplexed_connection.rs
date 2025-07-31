@@ -1,7 +1,7 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 #[cfg(feature = "cache-aio")]
 use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::{count_digits, Cmd};
+use crate::cmd::{count_digits, FrozenCmd};
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
@@ -67,8 +67,8 @@ impl ResponseAggregate {
 }
 
 enum Input {
-    Cmd { arg_count: usize, data: Bytes },
-    Pipeline(Vec<u8>),
+    Separate { arg_count: usize, data: Bytes },
+    Full(Bytes),
 }
 
 struct InFlight {
@@ -144,7 +144,7 @@ where
         #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> Self
     where
-        T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: Sink<Bytes, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
     {
         PipelineSink {
             sink_stream,
@@ -267,7 +267,9 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+    T: Sink<Bytes, Error = RedisError>,
+    T: Stream<Item = RedisResult<Value>>,
+    T: 'static,
 {
     type Error = ();
 
@@ -308,10 +310,10 @@ where
         }
 
         let data = match input {
-            Input::Cmd { arg_count, data } => {
+            Input::Separate { arg_count, data } => {
                 let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
                 crate::cmd::write_count(&mut vec, arg_count).unwrap();
-                match self_.sink_stream.as_mut().start_send(vec) {
+                match self_.sink_stream.as_mut().start_send(vec.into()) {
                     Ok(()) => data,
                     Err(err) => {
                         let _ = output.send(Err(err));
@@ -319,7 +321,7 @@ where
                     }
                 }
             }
-            Input::Pipeline(items) => items,
+            Input::Full(items) => items,
         };
         match self_.sink_stream.start_send(data) {
             Ok(()) => {
@@ -377,7 +379,7 @@ impl Pipeline {
         #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<Vec<u8>, Error = RedisError>,
+        T: Sink<Bytes, Error = RedisError>,
         T: Stream<Item = RedisResult<Value>>,
         T: Unpin + Send + 'static,
     {
@@ -571,10 +573,10 @@ impl MultiplexedConnection {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_command(&mut self, cmd: Cmd) -> RedisResult<Value> {
+    pub async fn send_packed_command(&mut self, cmd: FrozenCmd) -> RedisResult<Value> {
         #[cfg(feature = "cache-aio")]
         if let Some(cache_manager) = &self.cache_manager {
-            match cache_manager.get_cached_cmd(&cmd) {
+            match cache_manager.get_cached_cmd(cmd) {
                 PrepareCacheResult::Cached(value) => return Ok(value),
                 PrepareCacheResult::NotCached(cacheable_command) => {
                     let mut pipeline = crate::Pipeline::new();
@@ -583,7 +585,7 @@ impl MultiplexedConnection {
                     let result = self
                         .pipeline
                         .send_recv(
-                            Input::Pipeline(pipeline.get_packed_pipeline()),
+                            Input::Full(pipeline.get_packed_pipeline().into()),
                             Some(PipelineResponseExpectation {
                                 skipped_response_count: 0,
                                 expected_response_count: pipeline.commands.len(),
@@ -600,13 +602,13 @@ impl MultiplexedConnection {
         }
         self.pipeline
             .send_recv(
-                if cmd.data_is_complete() {
-                    Input::Cmd {
-                        arg_count: cmd.args_iter().len(),
+                if cmd.data_is_full_packaged_cmd {
+                    Input::Full(cmd.data.clone())
+                } else {
+                    Input::Separate {
+                        arg_count: cmd.args.len(),
                         data: cmd.data.clone(),
                     }
-                } else {
-                    Input::Pipeline(cmd.get_packed_command())
                 },
                 None,
                 self.response_timeout,
@@ -630,7 +632,7 @@ impl MultiplexedConnection {
             let result = self
                 .pipeline
                 .send_recv(
-                    Input::Pipeline(pipeline.get_packed_pipeline()),
+                    Input::Full(pipeline.get_packed_pipeline().into()),
                     Some(PipelineResponseExpectation {
                         skipped_response_count,
                         expected_response_count,
@@ -645,7 +647,7 @@ impl MultiplexedConnection {
         let value = self
             .pipeline
             .send_recv(
-                Input::Pipeline(pipeline.get_packed_pipeline()),
+                Input::Full(pipeline.get_packed_pipeline().into()),
                 Some(PipelineResponseExpectation {
                     skipped_response_count: offset,
                     expected_response_count: count,
@@ -669,7 +671,7 @@ impl MultiplexedConnection {
 }
 
 impl ConnectionLike for MultiplexedConnection {
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
         (async move { self.send_packed_command(cmd).await }).boxed()
     }
 

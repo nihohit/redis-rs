@@ -115,11 +115,11 @@ use crate::{
         slot_map::{Slot, SlotMap},
         topology::parse_slots,
     },
-    cmd::cmd,
+    cmd::{cmd, FrozenCmd},
     errors::closed_connection_error,
     subscription_tracker::SubscriptionTracker,
-    AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError,
-    RedisFuture, RedisResult, ToRedisArgs, Value,
+    AsyncConnectionConfig, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError, RedisFuture,
+    RedisResult, ToRedisArgs, Value,
 };
 
 #[cfg(feature = "cache-aio")]
@@ -197,14 +197,18 @@ where
     }
 
     /// Send a command to the given `routing`, and aggregate the response according to `response_policy`.
-    pub async fn route_command(&mut self, cmd: Cmd, routing: RoutingInfo) -> RedisResult<Value> {
+    pub async fn route_command(
+        &mut self,
+        cmd: FrozenCmd,
+        routing: RoutingInfo,
+    ) -> RedisResult<Value> {
         trace!("send_packed_command");
         let (sender, receiver) = oneshot::channel();
         let request = async {
             self.sender
                 .send(Message {
                     cmd: CmdArg::Cmd {
-                        cmd: Arc::new(cmd),
+                        cmd,
                         routing: routing.into(),
                     },
                     sender,
@@ -544,7 +548,7 @@ where
                 retry: 0,
                 sender: request::ResultExpectation::Internal,
                 cmd: CmdArg::Cmd {
-                    cmd: Arc::new(cmd.clone()),
+                    cmd: cmd.clone().freeze(),
                     routing,
                 },
             }
@@ -787,7 +791,7 @@ where
     }
 
     async fn execute_on_multiple_nodes<'a>(
-        cmd: &'a Arc<Cmd>,
+        cmd: &'a FrozenCmd,
         routing: &'a MultipleNodeRoutingInfo,
         core: Core<C>,
         response_policy: Option<ResponsePolicy>,
@@ -806,7 +810,7 @@ where
             );
         }
         let (receivers, requests): (Vec<_>, Vec<_>) = {
-            let to_request = |(addr, cmd): (&ArcStr, Arc<Cmd>)| {
+            let to_request = |(addr, cmd): (&ArcStr, FrozenCmd)| {
                 read_guard.0.get(addr).cloned().map(|conn| {
                     let (sender, receiver) = oneshot::channel();
                     let addr = addr.clone();
@@ -850,7 +854,7 @@ where
                             let (_, indices) = routes.get(index).unwrap();
                             let cmd =
                                 Arc::new(crate::cluster_routing::command_for_multi_slot_indices(
-                                    cmd.as_ref(),
+                                    &cmd,
                                     indices.iter(),
                                 ));
                             to_request((addr, cmd))
@@ -871,7 +875,7 @@ where
     }
 
     async fn try_cmd_request(
-        cmd: Arc<Cmd>,
+        cmd: FrozenCmd,
         routing: InternalRoutingInfo<C>,
         core: Core<C>,
     ) -> OperationResult {
@@ -891,7 +895,7 @@ where
         match Self::get_connection(route, core).await {
             Ok((addr, mut conn)) => (
                 addr.into(),
-                conn.req_packed_command((*cmd).clone())
+                conn.req_packed_command((cmd).clone())
                     .await
                     .map(Response::Single),
             ),
@@ -1019,7 +1023,7 @@ where
         };
         if asking {
             let _ = conn
-                .req_packed_command(crate::cmd::cmd("ASKING"))
+                .req_packed_command(crate::cmd::cmd("ASKING").freeze())
                 .await
                 .and_then(|value| value.extract_error());
         }
@@ -1297,7 +1301,7 @@ impl<C> ConnectionLike for ClusterConnection<C>
 where
     C: ConnectionLike + Send + Clone + Unpin + Sync + Connect + 'static,
 {
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
         let routing = RoutingInfo::for_routable(&cmd)
             .unwrap_or(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random));
         self.route_command(cmd, routing).boxed()
@@ -1401,7 +1405,8 @@ where
         cmd("READONLY")
     } else {
         cmd("PING")
-    };
+    }
+    .freeze();
 
     conn.req_packed_command(check).await?;
     Ok(conn)

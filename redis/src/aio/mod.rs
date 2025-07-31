@@ -1,5 +1,5 @@
 //! Adds async IO support to redis.
-use crate::cmd::{Cmd, FrozenCmd};
+use crate::cmd::FrozenCmd;
 use crate::connection::{
     check_connection_setup, connection_setup_pipeline, AuthResult, ConnectionSetupComponents,
     RedisConnectionInfo,

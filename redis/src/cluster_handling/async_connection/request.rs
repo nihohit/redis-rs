@@ -6,11 +6,11 @@ use std::{
     time::Duration,
 };
 
-use crate::errors::RetryMethod;
 use crate::{
     cluster_async::OperationTarget, cluster_handling::client::RetryParams,
-    cluster_routing::Redirect, Cmd, RedisResult,
+    cluster_routing::Redirect, RedisResult,
 };
+use crate::{cmd::FrozenCmd, errors::RetryMethod};
 
 use futures_util::{future::BoxFuture, ready};
 use log::trace;
@@ -25,7 +25,7 @@ use super::{
 #[derive(Clone)]
 pub(super) enum CmdArg<C> {
     Cmd {
-        cmd: Arc<Cmd>,
+        cmd: FrozenCmd,
         routing: InternalRoutingInfo<C>,
     },
     Pipeline {
