@@ -15,7 +15,7 @@ use crate::types::{from_owned_redis_value, FromRedisValue, RedisResult, RedisWri
 use crate::{connection::ConnectionLike, ParsingError};
 
 /// An argument to a redis command
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Arg<D> {
     /// A normal argument
     Simple(D),
@@ -73,11 +73,6 @@ impl Default for CommandCacheConfig {
     }
 }
 
-// enum Repr {
-//     Mutable {},
-//     Frozen {},
-// }
-
 /// Represents redis commands.
 #[derive(Clone)]
 pub struct Cmd {
@@ -108,6 +103,7 @@ pub struct FrozenCmd {
     pub(crate) data_is_full_packaged_cmd: bool,
 }
 
+#[cfg(feature = "aio")]
 impl FrozenCmd {
     /// asdasda
     pub fn get_data(&self) -> &[u8] {
@@ -1019,6 +1015,39 @@ mod tests {
     use bytes::BufMut;
     use rstest::rstest;
 
+    fn args_iter_to_str(iter: &impl ArgsIterator) -> Vec<String> {
+        iter.args_iter()
+            .map(|arg| match arg {
+                Arg::Simple(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+                Arg::Cursor => "CURSOR".to_string(),
+            })
+            .collect()
+    }
+
+    fn assert_arg_equallity(c1: &impl ArgsIterator, c2: &impl ArgsIterator) {
+        let c1: Vec<_> = args_iter_to_str(c1);
+        let c2: Vec<_> = args_iter_to_str(c2);
+        assert_eq!(c1, c2);
+    }
+
+    fn assert_practical_equivalent(c1: Cmd, c2: Cmd) {
+        assert_eq!(c1.get_packed_command(), c2.get_packed_command());
+        assert_arg_equallity(&c1, &c2);
+        #[cfg(feature = "bytes")]
+        {
+            let c1 = c1.freeze();
+            let c2 = c2.freeze();
+            assert_arg_equallity(&c1, &c2);
+            match (c1.data_is_full_packaged_cmd, c2.data_is_full_packaged_cmd) {
+                (true, false) => todo!(),
+                (false, true) => todo!(),
+                _ => {
+                    assert_eq!(c1.data, c2.data);
+                }
+            }
+        }
+    }
+
     #[rstest]
     fn test_cmd_packed_command_simple_args(#[values(false, true)] give_size: bool) {
         let args: &[&[u8]] = &[b"phone", b"barz"];
@@ -1034,6 +1063,7 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
+        todo!();
     }
 
     #[test]
@@ -1049,6 +1079,7 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
+        todo!();
     }
 
     #[test]
@@ -1065,6 +1096,7 @@ mod tests {
         assert_eq!(cmd.cursor, None);
         assert!(!cmd.no_response);
         assert!(!cmd.buffering);
+        assert_practical_equivalent(cmd, Cmd::new());
     }
 
     // #[test]
@@ -1098,13 +1130,11 @@ mod tests {
             c1_writer.write_all(b"bar").unwrap();
             c1_writer.flush().unwrap();
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     // Test that multiple writers to the same command produce the same
@@ -1124,14 +1154,12 @@ mod tests {
             c1_writer.write_all(b"qux").unwrap();
             c1_writer.flush().unwrap();
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
         c2.write_arg(b"bazqux");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     // Test that an "empty" write produces the equivalent to `write_arg(b"")`
@@ -1142,13 +1170,11 @@ mod tests {
             let mut c1_writer = c1.writer_for_next_arg(give_size.then_some(0));
             c1_writer.flush().unwrap();
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[cfg(feature = "bytes")]
@@ -1162,13 +1188,11 @@ mod tests {
             c1_writer.put_slice(b"foo");
             c1_writer.put_slice(b"bar");
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[cfg(feature = "bytes")]
@@ -1187,14 +1211,12 @@ mod tests {
             c1_writer.put_slice(b"baz");
             c1_writer.put_slice(b"qux");
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
         c2.write_arg(b"bazqux");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[cfg(feature = "bytes")]
@@ -1205,13 +1227,11 @@ mod tests {
         {
             let _c1_writer = c1.bufmut_for_next_arg(0, give_size);
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[test]
