@@ -1,7 +1,7 @@
 use super::cmd::{CacheableCommand, CacheablePipeline, MultipleCachedCommandPart};
 use super::sharded_lru::*;
 use super::{CacheConfig, CacheMode, CacheStatistics};
-use crate::cmd::{cmd_len, Cmd};
+use crate::cmd::{cmd_len, Cacheable, Cmd};
 use crate::commands::is_readonly_cmd;
 use crate::{Pipeline, PushKind, Value};
 use std::cmp::min;
@@ -87,7 +87,7 @@ impl CacheManager {
         }
     }
 
-    pub(crate) fn get_cached_cmd<'a>(&self, cmd: &'a Cmd) -> PrepareCacheResult<'a> {
+    pub(crate) fn get_cached_cmd<'a>(&self, cmd: &'a impl Cacheable) -> PrepareCacheResult<'a> {
         match self.cache_config.mode {
             CacheMode::All => self.get_cached_cmd_inner(cmd),
             CacheMode::OptIn => {
@@ -104,7 +104,7 @@ impl CacheManager {
         }
     }
 
-    fn calculate_expiration_time(&self, cmd: &Cmd) -> Instant {
+    fn calculate_expiration_time(&self, cmd: &impl Cacheable) -> Instant {
         let client_side_ttl = cmd
             .get_cache_config()
             .as_ref()
@@ -128,7 +128,7 @@ impl CacheManager {
         }
     }
 
-    fn extract_simple_arguments<'a>(&self, cmd: &'a Cmd) -> Vec<&'a [u8]> {
+    fn extract_simple_arguments<'a>(&self, cmd: &'a impl Cacheable) -> Vec<&'a [u8]> {
         cmd.args_iter()
             .skip(1) // Skip the command name
             .filter_map(|arg| match arg {
@@ -140,7 +140,7 @@ impl CacheManager {
 
     fn process_multi_key_arguments<'a>(
         &self,
-        cmd: &'a Cmd,
+        cmd: &'a impl Cacheable,
         is_json_command: bool,
         single_command_name: &[u8],
         commands: &mut Vec<(usize, MultipleCachedCommandPart<'a>)>,
@@ -179,7 +179,7 @@ impl CacheManager {
 
     fn handle_multi_key_command<'a>(
         &self,
-        cmd: &'a Cmd,
+        cmd: &'a impl Cacheable,
         command_name_str: &'a str,
         single_command_name: &[u8],
         client_side_expire: Instant,
@@ -214,7 +214,7 @@ impl CacheManager {
 
     fn handle_single_key_command<'a>(
         &self,
-        cmd: &'a Cmd,
+        cmd: &'a impl Cacheable,
         client_side_expire: Instant,
     ) -> PrepareCacheResult<'a> {
         let redis_key = match cmd.arg_idx(1) {
@@ -243,7 +243,7 @@ impl CacheManager {
     /// If there isn't enough information in cache but Cmd is cacheable then packs enough information
     /// into CacheableCommand and returns PrepareCacheResult::NotCached.
     /// If Cmd doesn't support client side caching then it returns PrepareCacheResult::NotCacheable.
-    fn get_cached_cmd_inner<'a>(&self, cmd: &'a Cmd) -> PrepareCacheResult<'a> {
+    fn get_cached_cmd_inner<'a>(&self, cmd: &'a impl Cacheable) -> PrepareCacheResult<'a> {
         if cmd_len(cmd) < 2 {
             return PrepareCacheResult::NotCacheable;
         }

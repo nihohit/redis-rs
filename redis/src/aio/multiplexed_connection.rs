@@ -1,7 +1,7 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 #[cfg(feature = "cache-aio")]
 use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::{count_digits, FrozenCmd};
+use crate::cmd::{count_digits, Cacheable, FrozenCmd};
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
@@ -573,7 +573,7 @@ impl MultiplexedConnection {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_command(&mut self, cmd: FrozenCmd) -> RedisResult<Value> {
+    pub async fn send_packed_command(&mut self, cmd: &impl Cacheable) -> RedisResult<Value> {
         #[cfg(feature = "cache-aio")]
         if let Some(cache_manager) = &self.cache_manager {
             match cache_manager.get_cached_cmd(cmd) {
