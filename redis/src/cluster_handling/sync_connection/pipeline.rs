@@ -1,5 +1,5 @@
 use super::ClusterConnection;
-use crate::cmd::{cmd, Cmd};
+use crate::cmd::{cmd, ArgsIterator, Cmd};
 use crate::errors::ErrorKind;
 use crate::types::{
     from_owned_redis_value, FromRedisValue, HashSet, RedisResult, ToRedisArgs, Value,

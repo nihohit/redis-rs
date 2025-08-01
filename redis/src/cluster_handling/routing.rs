@@ -131,9 +131,9 @@ where
 {
     let mut new_cmd = Cmd::new();
     let command_length = 1; // TODO - the +1 should change if we have multi-slot commands with 2 command words.
-    new_cmd.arg_mut(original_cmd.arg_idx(0));
+    new_cmd.arg_mut(original_cmd.arg_at(0));
     for index in indices {
-        new_cmd.arg_mut(original_cmd.arg_idx(index + command_length));
+        new_cmd.arg_mut(original_cmd.arg_at(index + command_length));
     }
     new_cmd
 }
@@ -499,11 +499,11 @@ where
     let incr_add_next_arg = |arg_indices: &mut Vec<usize>, mut curr_arg_idx: usize| {
         curr_arg_idx += 1;
         // Ensure there's a value following the key
-        routable.arg_idx(curr_arg_idx)?;
+        routable.arg_at(curr_arg_idx)?;
         arg_indices.push(curr_arg_idx);
         Some(curr_arg_idx)
     };
-    while let Some(arg) = routable.arg_idx(first_key_index + curr_arg_idx) {
+    while let Some(arg) = routable.arg_at(first_key_index + curr_arg_idx) {
         let route = get_route(is_readonly, arg);
         let arg_indices = routes.entry(route).or_insert(Vec::new());
 
@@ -518,7 +518,7 @@ where
             MultiSlotArgPattern::KeysAndLastArg => {
                 // Check if the command has more keys or if the next argument is a path
                 if routable
-                    .arg_idx(first_key_index + curr_arg_idx + 2)
+                    .arg_at(first_key_index + curr_arg_idx + 2)
                     .is_none()
                 {
                     // Last key reached; add the path argument index for each route and break
@@ -801,38 +801,38 @@ impl RoutingInfo {
 
             RouteBy::ThirdArgAfterKeyCount => {
                 let key_count = r
-                    .arg_idx(2)
+                    .arg_at(2)
                     .and_then(|x| std::str::from_utf8(x).ok())
                     .and_then(|x| x.parse::<u64>().ok())?;
                 if key_count == 0 {
                     Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
                 } else {
-                    r.arg_idx(3).map(|key| RoutingInfo::for_key(cmd, key))
+                    r.arg_at(3).map(|key| RoutingInfo::for_key(cmd, key))
                 }
             }
 
-            RouteBy::SecondArg => r.arg_idx(2).map(|key| RoutingInfo::for_key(cmd, key)),
+            RouteBy::SecondArg => r.arg_at(2).map(|key| RoutingInfo::for_key(cmd, key)),
 
             RouteBy::SecondArgAfterKeyCount => {
                 let key_count = r
-                    .arg_idx(1)
+                    .arg_at(1)
                     .and_then(|x| std::str::from_utf8(x).ok())
                     .and_then(|x| x.parse::<u64>().ok())?;
                 if key_count == 0 {
                     Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
                 } else {
-                    r.arg_idx(2).map(|key| RoutingInfo::for_key(cmd, key))
+                    r.arg_at(2).map(|key| RoutingInfo::for_key(cmd, key))
                 }
             }
 
             RouteBy::StreamsIndex => {
                 let streams_position = r.position(b"STREAMS")?;
-                r.arg_idx(streams_position + 1)
+                r.arg_at(streams_position + 1)
                     .map(|key| RoutingInfo::for_key(cmd, key))
             }
 
             RouteBy::SecondArgSlot => r
-                .arg_idx(2)
+                .arg_at(2)
                 .and_then(|arg| std::str::from_utf8(arg).ok())
                 .and_then(|slot| slot.parse::<u16>().ok())
                 .map(|slot| {
@@ -842,7 +842,7 @@ impl RoutingInfo {
                     )))
                 }),
 
-            RouteBy::FirstKey => match r.arg_idx(1) {
+            RouteBy::FirstKey => match r.arg_at(1) {
                 Some(key) => Some(RoutingInfo::for_key(cmd, key)),
                 None => Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random)),
             },
@@ -864,7 +864,7 @@ pub(crate) trait Routable {
     /// Convenience function to return ascii uppercase version of the
     /// the first argument (i.e., the command).
     fn command(&self) -> Option<Vec<u8>> {
-        let primary_command = self.arg_idx(0).map(|x| x.to_ascii_uppercase())?;
+        let primary_command = self.arg_at(0).map(|x| x.to_ascii_uppercase())?;
         let mut primary_command = match primary_command.as_slice() {
             b"XGROUP" | b"OBJECT" | b"SLOWLOG" | b"FUNCTION" | b"MODULE" | b"COMMAND"
             | b"PUBSUB" | b"CONFIG" | b"MEMORY" | b"XINFO" | b"CLIENT" | b"ACL" | b"SCRIPT"
@@ -874,7 +874,7 @@ pub(crate) trait Routable {
             }
         };
 
-        Some(match self.arg_idx(1) {
+        Some(match self.arg_at(1) {
             Some(secondary_command) => {
                 let previous_len = primary_command.len();
                 primary_command.reserve(secondary_command.len() + 1);
@@ -889,7 +889,7 @@ pub(crate) trait Routable {
     }
 
     /// Returns a reference to the data for the argument at `idx`.
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]>;
+    fn arg_at(&self, idx: usize) -> Option<&[u8]>;
 
     /// Returns index of argument that matches `candidate`, if it exists
     fn position(&self, candidate: &[u8]) -> Option<usize>;
@@ -899,8 +899,8 @@ impl<T> Routable for T
 where
     T: ArgsIterator,
 {
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
-        ArgsIterator::arg_idx(self, idx)
+    fn arg_at(&self, idx: usize) -> Option<&[u8]> {
+        self.arg_idx(idx)
     }
 
     fn position(&self, candidate: &[u8]) -> Option<usize> {
@@ -912,7 +912,7 @@ where
 }
 
 impl Routable for Value {
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+    fn arg_at(&self, idx: usize) -> Option<&[u8]> {
         match self {
             Value::Array(args) => match args.get(idx) {
                 Some(Value::BulkString(ref data)) => Some(&data[..]),

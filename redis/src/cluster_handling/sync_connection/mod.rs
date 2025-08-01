@@ -127,10 +127,10 @@ impl<'a> Input<'a> {
 }
 
 impl Routable for Input<'_> {
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+    fn arg_at(&self, idx: usize) -> Option<&[u8]> {
         match self {
-            Input::Slice { cmd: _, routable } => routable.arg_idx(idx),
-            Input::Cmd(cmd) => cmd.arg_idx(idx),
+            Input::Slice { cmd: _, routable } => routable.arg_at(idx),
+            Input::Cmd(cmd) => cmd.arg_at(idx),
             Input::Commands { .. } => None,
         }
     }
