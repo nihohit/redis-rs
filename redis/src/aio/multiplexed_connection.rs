@@ -602,6 +602,10 @@ impl MultiplexedConnection {
         // }
         self.pipeline
             .send_recv(
+                match cmd.0 {
+                    cmd::FrozenRepr::FullyPackaged { data, .. } => data.clone(),
+                    cmd::FrozenRepr::Copy(cmd) => todo!(),
+                }
                 if cmd.data_is_full_packaged_cmd {
                     Input::Full(cmd.data.clone())
                 } else {

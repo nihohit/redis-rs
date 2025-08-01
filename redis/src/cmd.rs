@@ -91,23 +91,28 @@ pub struct Cmd {
 /// asdasd
 #[cfg(feature = "aio")]
 #[derive(Clone)]
-pub struct FrozenCmd {
-    pub(crate) data: bytes::Bytes,
-    // Arg::Simple contains the range for each argument
-    pub(crate) args: std::sync::Arc<[Arg<Range<usize>>]>,
-    // // If it's true command's response won't be read from socket. Useful for Pub/Sub.
-    // no_response: bool,
-    // #[cfg(feature = "cache-aio")]
-    // cache: Option<CommandCacheConfig>,
-    // if true, then the data is the full serialized command. If not, its missing the arg count at the head of the command.
-    pub(crate) data_is_full_packaged_cmd: bool,
+pub struct FrozenCmd(pub(crate) FrozenRepr);
+
+#[derive(Clone)]
+pub(crate) enum FrozenRepr {
+    FullyPackaged {
+        data: bytes::Bytes,
+        // Arg::Simple contains the range for each argument
+        args: std::sync::Arc<[Arg<Range<usize>>]>,
+        // #[cfg(feature = "cache-aio")]
+        // cache: Option<CommandCacheConfig>,
+    },
+    Copy(std::sync::Arc<Cmd>),
 }
 
 #[cfg(feature = "aio")]
 impl FrozenCmd {
     /// asdasda
-    pub fn get_data(&self) -> &[u8] {
-        &self.data
+    pub fn get_data(&self) -> Vec<u8> {
+        match &self.0 {
+            FrozenRepr::FullyPackaged { data, .. } => data.clone().to_vec(),
+            FrozenRepr::Copy(cmd) => cmd.get_packed_command(),
+        }
     }
 }
 
@@ -115,19 +120,15 @@ impl FrozenCmd {
 impl Cmd {
     /// asdasdasd
     pub fn freeze(self) -> FrozenCmd {
-        let data_is_full_packaged_cmd = self.data_is_complete();
-        let data = if self.data_is_complete() {
-            self.data.into()
+        let repr = if self.data_is_complete() {
+            FrozenRepr::FullyPackaged {
+                data: self.data.into(),
+                args: std::sync::Arc::from(self.args),
+            }
         } else {
-            self.get_packed_command().into()
+            FrozenRepr::Copy(std::sync::Arc::new(self))
         };
-        FrozenCmd {
-            data,
-            args: std::sync::Arc::from(self.args),
-            // no_response: self.no_response,
-            // cache: self.cache,
-            data_is_full_packaged_cmd,
-        }
+        FrozenCmd(repr)
     }
 }
 
