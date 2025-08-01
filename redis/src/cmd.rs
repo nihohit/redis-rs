@@ -94,75 +94,71 @@ pub struct Cmd {
 }
 
 #[cfg(feature = "aio")]
-pub(crate) mod frozen_cmd {
-    use super::*;
+#[derive(Clone)]
 
-    #[derive(Clone)]
-
-    pub struct FrozenCmd {
-        pub(crate) data: bytes::Bytes,
-        // Arg::Simple contains the range for each argument
-        pub(crate) args: std::sync::Arc<[Arg<Range<usize>>]>,
-        // If it's true command's response won't be read from socket. Useful for Pub/Sub.
-        no_response: bool,
-        #[cfg(feature = "cache-aio")]
-        cache: Option<CommandCacheConfig>,
-        // if true, then the data is the full serialized command. If not, its missing the arg count at the head of the command.
-        pub(crate) data_is_full_packaged_cmd: bool,
-    }
-
-    impl Cmd {
-        pub(crate) fn freeze(self) -> FrozenCmd {
-            let data_is_full_packaged_cmd = self.data_is_complete();
-            let data = if self.data_is_complete() {
-                self.data.into()
-            } else {
-                self.get_packed_command().into()
-            };
-            FrozenCmd {
-                data,
-                args: std::sync::Arc::from(self.args),
-                no_response: self.no_response,
-                cache: self.cache,
-                data_is_full_packaged_cmd,
-            }
-        }
-    }
-
-    impl ArgsIterator for FrozenCmd {
-        /// Returns an iterator over the arguments in this command (including the command name itself)
-        fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
-            self.args.iter().map(move |arg| match arg {
-                Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
-
-                Arg::Cursor => Arg::Cursor,
-            })
-        }
-
-        // Get a reference to the argument at `idx`
-        #[cfg(any(feature = "cluster", feature = "cache-aio"))]
-        fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
-            if idx >= self.args.len() {
-                return None;
-            }
-
-            match &self.args[idx] {
-                Arg::Simple(range) => Some(&self.data[range.start..range.end]),
-                _ => None,
-            }
-        }
-    }
-
+pub struct FrozenCmd {
+    pub(crate) data: bytes::Bytes,
+    // Arg::Simple contains the range for each argument
+    pub(crate) args: std::sync::Arc<[Arg<Range<usize>>]>,
+    // If it's true command's response won't be read from socket. Useful for Pub/Sub.
+    no_response: bool,
     #[cfg(feature = "cache-aio")]
-    impl Cacheable for FrozenCmd {
-        fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
-            &self.cache
+    cache: Option<CommandCacheConfig>,
+    // if true, then the data is the full serialized command. If not, its missing the arg count at the head of the command.
+    pub(crate) data_is_full_packaged_cmd: bool,
+}
+
+#[cfg(feature = "aio")]
+impl Cmd {
+    pub(crate) fn freeze(self) -> FrozenCmd {
+        let data_is_full_packaged_cmd = self.data_is_complete();
+        let data = if self.data_is_complete() {
+            self.data.into()
+        } else {
+            self.get_packed_command().into()
+        };
+        FrozenCmd {
+            data,
+            args: std::sync::Arc::from(self.args),
+            no_response: self.no_response,
+            cache: self.cache,
+            data_is_full_packaged_cmd,
         }
     }
 }
 
-#[cfg(feature = "bytes")]
-pub use frozen_cmd::*;
+#[cfg(feature = "aio")]
+impl ArgsIterator for FrozenCmd {
+    /// Returns an iterator over the arguments in this command (including the command name itself)
+    fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
+        self.args.iter().map(move |arg| match arg {
+            Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
+
+            Arg::Cursor => Arg::Cursor,
+        })
+    }
+
+    // Get a reference to the argument at `idx`
+    #[cfg(any(feature = "cluster", feature = "cache-aio"))]
+    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+        if idx >= self.args.len() {
+            return None;
+        }
+
+        match &self.args[idx] {
+            Arg::Simple(range) => Some(&self.data[range.start..range.end]),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "aio")]
+#[cfg(feature = "cache-aio")]
+impl Cacheable for FrozenCmd {
+    fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
+        &self.cache
+    }
+}
 
 /// Represents a redis iterator.
 pub struct Iter<'a, T: FromRedisValue> {

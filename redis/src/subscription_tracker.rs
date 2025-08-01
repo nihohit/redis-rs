@@ -3,7 +3,7 @@
 use core::str;
 use std::collections::HashSet;
 
-use crate::{Arg, Cmd, Pipeline};
+use crate::{cmd::ArgsIterator, Arg, Pipeline};
 
 #[derive(Default)]
 pub(crate) struct SubscriptionTracker {
@@ -64,7 +64,7 @@ impl SubscriptionTracker {
         }
     }
 
-    pub(crate) fn update_with_cmd<'a>(&'a mut self, cmd: &'a Cmd) {
+    pub(crate) fn update_with_cmd<'a>(&'a mut self, cmd: &'a impl ArgsIterator) {
         let mut args_iter = cmd.args_iter();
         let first_arg = args_iter.next();
 

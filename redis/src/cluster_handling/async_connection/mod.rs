@@ -600,7 +600,7 @@ where
         for (addr, conn) in &mut *connections {
             result = async {
                 let value = conn
-                    .req_packed_command(slot_cmd())
+                    .req_packed_command(slot_cmd().freeze())
                     .await
                     .and_then(|value| value.extract_error())?;
                 let v: Vec<Slot> = parse_slots(value, addr.rsplit_once(':').unwrap().0)?;
@@ -852,11 +852,11 @@ where
                     .filter_map(|(index, addr_opt)| {
                         addr_opt.and_then(|addr| {
                             let (_, indices) = routes.get(index).unwrap();
-                            let cmd =
-                                Arc::new(crate::cluster_routing::command_for_multi_slot_indices(
-                                    &cmd,
-                                    indices.iter(),
-                                ));
+                            let cmd = crate::cluster_routing::command_for_multi_slot_indices(
+                                cmd,
+                                indices.iter(),
+                            )
+                            .freeze();
                             to_request((addr, cmd))
                         })
                     })
@@ -1216,7 +1216,7 @@ where
             // TODO - benchmark whether checking whether the command is a subscription outside of the mutex is more performant.
             let mut tracker = tracker.lock().unwrap();
             match &cmd {
-                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd.as_ref()),
+                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd),
                 CmdArg::Pipeline { pipeline, .. } => {
                     tracker.update_with_pipeline(pipeline.as_ref())
                 }

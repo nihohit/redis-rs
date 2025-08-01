@@ -2,7 +2,7 @@ use arcstr::ArcStr;
 use rand::Rng;
 
 use crate::cluster_handling::slot_map::SLOT_SIZE;
-use crate::cmd::{Arg, Cmd, FrozenCmd};
+use crate::cmd::{Arg, ArgsIterator, Cmd};
 use crate::commands::is_readonly_cmd;
 use crate::types::Value;
 use crate::{ErrorKind, RedisError, RedisResult};
@@ -895,23 +895,12 @@ pub(crate) trait Routable {
     fn position(&self, candidate: &[u8]) -> Option<usize>;
 }
 
-impl Routable for Cmd {
+impl<T> Routable for T
+where
+    T: ArgsIterator,
+{
     fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
-        self.arg_idx(idx)
-    }
-
-    fn position(&self, candidate: &[u8]) -> Option<usize> {
-        self.args_iter().position(|a| match a {
-            Arg::Simple(d) => d.eq_ignore_ascii_case(candidate),
-            _ => false,
-        })
-    }
-}
-
-#[cfg(feature = "bytes")]
-impl Routable for FrozenCmd {
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
-        self.arg_idx(idx)
+        ArgsIterator::arg_idx(self, idx)
     }
 
     fn position(&self, candidate: &[u8]) -> Option<usize> {

@@ -8,7 +8,7 @@ use crate::{
     errors::RedisError,
     subscription_tracker::{SubscriptionAction, SubscriptionTracker},
     types::{RedisResult, Value},
-    AsyncConnectionConfig, Client, Cmd, Pipeline, ProtocolVersion, PushInfo, PushKind, ToRedisArgs,
+    AsyncConnectionConfig, Client, Pipeline, ProtocolVersion, PushInfo, PushKind, ToRedisArgs,
 };
 use arc_swap::ArcSwap;
 use backon::{ExponentialBuilder, Retryable};
@@ -615,7 +615,7 @@ impl ConnectionManager {
 }
 
 impl ConnectionLike for ConnectionManager {
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
         (async move { self.send_packed_command(cmd).await }).boxed()
     }
 
