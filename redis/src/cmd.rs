@@ -100,10 +100,10 @@ pub struct FrozenCmd {
     pub(crate) data: bytes::Bytes,
     // Arg::Simple contains the range for each argument
     pub(crate) args: std::sync::Arc<[Arg<Range<usize>>]>,
-    // If it's true command's response won't be read from socket. Useful for Pub/Sub.
-    no_response: bool,
-    #[cfg(feature = "cache-aio")]
-    cache: Option<CommandCacheConfig>,
+    // // If it's true command's response won't be read from socket. Useful for Pub/Sub.
+    // no_response: bool,
+    // #[cfg(feature = "cache-aio")]
+    // cache: Option<CommandCacheConfig>,
     // if true, then the data is the full serialized command. If not, its missing the arg count at the head of the command.
     pub(crate) data_is_full_packaged_cmd: bool,
 }
@@ -120,8 +120,8 @@ impl Cmd {
         FrozenCmd {
             data,
             args: std::sync::Arc::from(self.args),
-            no_response: self.no_response,
-            cache: self.cache,
+            // no_response: self.no_response,
+            // cache: self.cache,
             data_is_full_packaged_cmd,
         }
     }
@@ -152,13 +152,13 @@ impl ArgsIterator for FrozenCmd {
     }
 }
 
-#[cfg(feature = "aio")]
-#[cfg(feature = "cache-aio")]
-impl Cacheable for FrozenCmd {
-    fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
-        &self.cache
-    }
-}
+// #[cfg(feature = "aio")]
+// #[cfg(feature = "cache-aio")]
+// impl Cacheable for FrozenCmd {
+//     fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
+//         &self.cache
+//     }
+// }
 
 /// Represents a redis iterator.
 pub struct Iter<'a, T: FromRedisValue> {
@@ -613,17 +613,17 @@ impl ArgsIterator for Cmd {
     }
 }
 
-#[cfg(feature = "cache-aio")]
-pub(crate) trait Cacheable: ArgsIterator {
-    fn get_cache_config(&self) -> &Option<CommandCacheConfig>;
-}
+// #[cfg(feature = "cache-aio")]
+// pub(crate) trait Cacheable: ArgsIterator {
+//     fn get_cache_config(&self) -> &Option<CommandCacheConfig>;
+// }
 
-#[cfg(feature = "cache-aio")]
-impl Cacheable for Cmd {
-    fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
-        &self.cache
-    }
-}
+// #[cfg(feature = "cache-aio")]
+// impl Cacheable for Cmd {
+//     fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
+//         &self.cache
+//     }
+// }
 
 /// A command acts as a builder interface to creating encoded redis
 /// requests.  This allows you to easily assemble a packed command
@@ -1059,25 +1059,25 @@ mod tests {
         assert!(!cmd.buffering);
     }
 
-    #[test]
-    #[cfg(feature = "cache-aio")]
-    fn test_cmd_clean_cache_aio() {
-        let mut cmd = cmd("key")
-            .arg("value")
-            .cursor_arg(24)
-            .set_cache_config(crate::CommandCacheConfig::default());
-        cmd.set_no_response(true);
-        cmd.clear();
+    // #[test]
+    // #[cfg(feature = "cache-aio")]
+    // fn test_cmd_clean_cache_aio() {
+    //     let mut cmd = cmd("key")
+    //         .arg("value")
+    //         .cursor_arg(24)
+    //         .set_cache_config(crate::CommandCacheConfig::default());
+    //     cmd.set_no_response(true);
+    //     cmd.clear();
 
-        // Everything should be reset, but the capacity should still be there
-        assert!(cmd.data.is_empty());
-        assert!(cmd.data.capacity() > 0);
-        assert!(cmd.args.is_empty());
-        assert!(cmd.args.capacity() > 0);
-        assert_eq!(cmd.cursor, None);
-        assert!(!cmd.no_response);
-        assert!(cmd.cache.is_none());
-    }
+    //     // Everything should be reset, but the capacity should still be there
+    //     assert!(cmd.data.is_empty());
+    //     assert!(cmd.data.capacity() > 0);
+    //     assert!(cmd.args.is_empty());
+    //     assert!(cmd.args.capacity() > 0);
+    //     assert_eq!(cmd.cursor, None);
+    //     assert!(!cmd.no_response);
+    //     assert!(cmd.cache.is_none());
+    // }
 
     #[rstest]
     fn test_cmd_writer_for_next_arg(#[values(false, true)] give_size: bool) {

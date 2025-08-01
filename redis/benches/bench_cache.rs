@@ -49,20 +49,16 @@ fn setup(
     per_key_command: u32,
     key_count: u32,
 ) -> Dependencies {
-    env::set_var("PROTOCOL", "RESP3");
+    if is_cache_enabled {
+        env::set_var("PROTOCOL", "RESP3");
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(thread_count)
         .enable_all()
         .build()
         .unwrap();
     let context = TestContext::new();
-    let connection = if is_cache_enabled {
-        runtime.block_on(context.async_connection()).unwrap()
-    } else {
-        runtime
-            .block_on(context.async_connection_with_cache())
-            .unwrap()
-    };
+    let connection = runtime.block_on(context.async_connection()).unwrap();
 
     let mut commands = Vec::with_capacity(key_count as usize);
     for i in 0..key_count {

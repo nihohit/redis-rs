@@ -386,8 +386,8 @@ impl PubSub {
         setup_connection(
             &mut codec,
             connection_info,
-            #[cfg(feature = "cache-aio")]
-            None,
+            // #[cfg(feature = "cache-aio")]
+            // None,
         )
         .await?;
         let (sender, receiver) = unbounded_channel();

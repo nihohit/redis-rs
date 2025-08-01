@@ -1198,8 +1198,8 @@ pub fn connect(
     let con = setup_connection(
         con,
         &connection_info.redis,
-        #[cfg(feature = "cache-aio")]
-        None,
+        // #[cfg(feature = "cache-aio")]
+        // None,
     )?;
 
     // remove the temporary timeout.
@@ -1213,14 +1213,14 @@ pub(crate) struct ConnectionSetupComponents {
     resp3_auth_cmd_idx: Option<usize>,
     resp2_auth_cmd_idx: Option<usize>,
     select_cmd_idx: Option<usize>,
-    #[cfg(feature = "cache-aio")]
-    cache_cmd_idx: Option<usize>,
+    // #[cfg(feature = "cache-aio")]
+    // cache_cmd_idx: Option<usize>,
 }
 
 pub(crate) fn connection_setup_pipeline(
     connection_info: &RedisConnectionInfo,
     check_username: bool,
-    #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
+    // #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
 ) -> (crate::Pipeline, ConnectionSetupComponents) {
     let mut pipeline = pipe();
     let (authenticate_with_resp3_cmd_index, authenticate_with_resp2_cmd_index) =
@@ -1244,17 +1244,17 @@ pub(crate) fn connection_setup_pipeline(
             pipeline.cmd("SELECT").arg(connection_info.db);
         });
 
-    #[cfg(feature = "cache-aio")]
-    let cache_cmd_index = cache_config.map(|cache_config| {
-        pipeline.cmd("CLIENT").arg("TRACKING").arg("ON");
-        match cache_config.mode {
-            crate::caching::CacheMode::All => {}
-            crate::caching::CacheMode::OptIn => {
-                pipeline.arg("OPTIN");
-            }
-        }
-        pipeline.len() - 1
-    });
+    // #[cfg(feature = "cache-aio")]
+    // let cache_cmd_index = cache_config.map(|cache_config| {
+    //     pipeline.cmd("CLIENT").arg("TRACKING").arg("ON");
+    //     match cache_config.mode {
+    //         crate::caching::CacheMode::All => {}
+    //         crate::caching::CacheMode::OptIn => {
+    //             pipeline.arg("OPTIN");
+    //         }
+    //     }
+    //     pipeline.len() - 1
+    // });
 
     // result is ignored, as per the command's instructions.
     // https://redis.io/commands/client-setinfo/
@@ -1279,8 +1279,8 @@ pub(crate) fn connection_setup_pipeline(
             resp3_auth_cmd_idx: authenticate_with_resp3_cmd_index,
             resp2_auth_cmd_idx: authenticate_with_resp2_cmd_index,
             select_cmd_idx: select_db_cmd_index,
-            #[cfg(feature = "cache-aio")]
-            cache_cmd_idx: cache_cmd_index,
+            // #[cfg(feature = "cache-aio")]
+            // cache_cmd_idx: cache_cmd_index,
         },
     )
 }
@@ -1347,18 +1347,18 @@ fn check_db_select(value: &Value) -> RedisResult<()> {
     }
 }
 
-#[cfg(feature = "cache-aio")]
-fn check_caching(result: &Value) -> RedisResult<()> {
-    match result {
-        Value::Okay => Ok(()),
-        _ => Err((
-            ServerErrorKind::ResponseError.into(),
-            "Client-side caching returned unknown response",
-            format!("{result:?}"),
-        )
-            .into()),
-    }
-}
+// #[cfg(feature = "cache-aio")]
+// fn check_caching(result: &Value) -> RedisResult<()> {
+//     match result {
+//         Value::Okay => Ok(()),
+//         _ => Err((
+//             ServerErrorKind::ResponseError.into(),
+//             "Client-side caching returned unknown response",
+//             format!("{result:?}"),
+//         )
+//             .into()),
+//     }
+// }
 
 pub(crate) fn check_connection_setup(
     results: Vec<Value>,
@@ -1366,8 +1366,8 @@ pub(crate) fn check_connection_setup(
         resp3_auth_cmd_idx,
         resp2_auth_cmd_idx,
         select_cmd_idx,
-        #[cfg(feature = "cache-aio")]
-        cache_cmd_idx,
+        // #[cfg(feature = "cache-aio")]
+        // cache_cmd_idx,
     }: ConnectionSetupComponents,
 ) -> RedisResult<AuthResult> {
     // can't have both values set
@@ -1394,13 +1394,13 @@ pub(crate) fn check_connection_setup(
         check_db_select(value)?;
     }
 
-    #[cfg(feature = "cache-aio")]
-    if let Some(index) = cache_cmd_idx {
-        let Some(value) = results.get(index) else {
-            return Err((ErrorKind::Client, "Missing Caching response").into());
-        };
-        check_caching(value)?;
-    }
+    // #[cfg(feature = "cache-aio")]
+    // if let Some(index) = cache_cmd_idx {
+    //     let Some(value) = results.get(index) else {
+    //         return Err((ErrorKind::Client, "Missing Caching response").into());
+    //     };
+    //     check_caching(value)?;
+    // }
 
     Ok(AuthResult::Succeeded)
 }
@@ -1420,7 +1420,7 @@ fn execute_connection_pipeline(
 fn setup_connection(
     con: ActualConnection,
     connection_info: &RedisConnectionInfo,
-    #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
+    // #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
 ) -> RedisResult<Connection> {
     let mut rv = Connection {
         con,
@@ -1437,8 +1437,8 @@ fn setup_connection(
         connection_setup_pipeline(
             connection_info,
             true,
-            #[cfg(feature = "cache-aio")]
-            cache_config,
+            // #[cfg(feature = "cache-aio")]
+            // cache_config,
         ),
     )? == AuthResult::ShouldRetryWithoutUsername
     {
@@ -1447,8 +1447,8 @@ fn setup_connection(
             connection_setup_pipeline(
                 connection_info,
                 false,
-                #[cfg(feature = "cache-aio")]
-                cache_config,
+                // #[cfg(feature = "cache-aio")]
+                // cache_config,
             ),
         )?;
     }

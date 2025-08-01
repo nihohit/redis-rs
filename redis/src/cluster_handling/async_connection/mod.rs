@@ -122,8 +122,8 @@ use crate::{
     RedisResult, ToRedisArgs, Value,
 };
 
-#[cfg(feature = "cache-aio")]
-use crate::caching::{CacheManager, CacheStatistics};
+// #[cfg(feature = "cache-aio")]
+// use crate::caching::{CacheManager, CacheStatistics};
 use crate::ProtocolVersion;
 use arcstr::ArcStr;
 use futures_sink::Sink;
@@ -143,8 +143,8 @@ struct ClientSideState {
     _task_handle: HandleContainer,
     response_timeout: Option<Duration>,
     runtime: Runtime,
-    #[cfg(feature = "cache-aio")]
-    cache_manager: Option<CacheManager>,
+    // #[cfg(feature = "cache-aio")]
+    // cache_manager: Option<CacheManager>,
 }
 
 /// This represents an async Redis Cluster connection.
@@ -167,8 +167,8 @@ where
     ) -> RedisResult<ClusterConnection<C>> {
         let protocol = cluster_params.protocol.unwrap_or_default();
         let response_timeout = cluster_params.response_timeout;
-        #[cfg(feature = "cache-aio")]
-        let cache_manager = cluster_params.cache_manager.clone();
+        // #[cfg(feature = "cache-aio")]
+        // let cache_manager = cluster_params.cache_manager.clone();
         let runtime = Runtime::locate();
         ClusterConnInner::new(initial_nodes, cluster_params)
             .await
@@ -189,8 +189,8 @@ where
                         _task_handle,
                         response_timeout,
                         runtime,
-                        #[cfg(feature = "cache-aio")]
-                        cache_manager,
+                        // #[cfg(feature = "cache-aio")]
+                        // cache_manager,
                     }),
                 }
             })
@@ -359,12 +359,12 @@ where
             .await?;
         Ok(())
     }
-    /// Gets [`CacheStatistics`] for cluster connection if caching is enabled.
-    #[cfg(feature = "cache-aio")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-    pub fn get_cache_statistics(&self) -> Option<CacheStatistics> {
-        self.state.cache_manager.as_ref().map(|cm| cm.statistics())
-    }
+    // /// Gets [`CacheStatistics`] for cluster connection if caching is enabled.
+    // #[cfg(feature = "cache-aio")]
+    // #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
+    // pub fn get_cache_statistics(&self) -> Option<CacheStatistics> {
+    //     self.state.cache_manager.as_ref().map(|cm| cm.statistics())
+    // }
 }
 
 type ConnectionMap<C> = HashMap<ArcStr, C>;
@@ -1374,8 +1374,8 @@ where
     let push_sender = params.async_push_sender.clone();
     let tcp_settings = params.tcp_settings.clone();
     let dns_resolver = params.async_dns_resolver.clone();
-    #[cfg(feature = "cache-aio")]
-    let cache_manager = params.cache_manager.clone();
+    // #[cfg(feature = "cache-aio")]
+    // let cache_manager = params.cache_manager.clone();
     let mut info = get_connection_info(node, params)?;
     info.tcp_settings = tcp_settings;
     let mut config =
@@ -1388,10 +1388,10 @@ where
     if let Some(resolver) = dns_resolver {
         config = config.set_dns_resolver_internal(resolver.clone());
     }
-    #[cfg(feature = "cache-aio")]
-    if let Some(cache_manager) = cache_manager {
-        config = config.set_cache_manager(cache_manager.clone_and_increase_epoch());
-    }
+    // #[cfg(feature = "cache-aio")]
+    // if let Some(cache_manager) = cache_manager {
+    //     config = config.set_cache_manager(cache_manager.clone_and_increase_epoch());
+    // }
     let mut conn = match C::connect_with_config(info, config).await {
         Ok(conn) => conn,
         Err(err) => {

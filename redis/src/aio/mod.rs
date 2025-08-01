@@ -124,7 +124,7 @@ where
 pub(super) async fn setup_connection<T>(
     codec: &mut T,
     connection_info: &RedisConnectionInfo,
-    #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
+    // #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
 ) -> RedisResult<()>
 where
     T: Sink<Vec<u8>, Error = RedisError>,
@@ -136,8 +136,8 @@ where
         connection_setup_pipeline(
             connection_info,
             true,
-            #[cfg(feature = "cache-aio")]
-            cache_config,
+            // #[cfg(feature = "cache-aio")]
+            // cache_config,
         ),
     )
     .await?
@@ -148,8 +148,8 @@ where
             connection_setup_pipeline(
                 connection_info,
                 false,
-                #[cfg(feature = "cache-aio")]
-                cache_config,
+                // #[cfg(feature = "cache-aio")]
+                // cache_config,
             ),
         )
         .await?;

@@ -1,6 +1,6 @@
 use super::{AsyncPushSender, HandleContainer, RedisFuture};
-#[cfg(feature = "cache-aio")]
-use crate::caching::CacheManager;
+// #[cfg(feature = "cache-aio")]
+// use crate::caching::CacheManager;
 use crate::{
     aio::{check_resp3, ConnectionLike, MultiplexedConnection, Runtime},
     client::{DEFAULT_CONNECTION_TIMEOUT, DEFAULT_RESPONSE_TIMEOUT},
@@ -41,8 +41,8 @@ pub struct ConnectionManagerConfig {
     push_sender: Option<Arc<dyn AsyncPushSender>>,
     /// if true, the manager should resubscribe automatically to all pubsub channels after reconnect.
     resubscribe_automatically: bool,
-    #[cfg(feature = "cache-aio")]
-    pub(crate) cache_config: Option<crate::caching::CacheConfig>,
+    // #[cfg(feature = "cache-aio")]
+    // pub(crate) cache_config: Option<crate::caching::CacheConfig>,
 }
 
 impl std::fmt::Debug for ConnectionManagerConfig {
@@ -56,8 +56,8 @@ impl std::fmt::Debug for ConnectionManagerConfig {
             connection_timeout,
             push_sender,
             resubscribe_automatically,
-            #[cfg(feature = "cache-aio")]
-            cache_config,
+            // #[cfg(feature = "cache-aio")]
+            // cache_config,
         } = &self;
         let mut str = f.debug_struct("ConnectionManagerConfig");
         str.field("exponent_base", &exponent_base)
@@ -76,8 +76,8 @@ impl std::fmt::Debug for ConnectionManagerConfig {
                 },
             );
 
-        #[cfg(feature = "cache-aio")]
-        str.field("cache_config", &cache_config);
+        // #[cfg(feature = "cache-aio")]
+        // str.field("cache_config", &cache_config);
 
         str.finish()
     }
@@ -170,14 +170,14 @@ impl ConnectionManagerConfig {
         self
     }
 
-    /// Set the cache behavior.
-    #[cfg(feature = "cache-aio")]
-    pub fn set_cache_config(self, cache_config: crate::caching::CacheConfig) -> Self {
-        Self {
-            cache_config: Some(cache_config),
-            ..self
-        }
-    }
+    // /// Set the cache behavior.
+    // #[cfg(feature = "cache-aio")]
+    // pub fn set_cache_config(self, cache_config: crate::caching::CacheConfig) -> Self {
+    //     Self {
+    //         cache_config: Some(cache_config),
+    //         ..self
+    //     }
+    // }
 }
 
 impl Default for ConnectionManagerConfig {
@@ -191,8 +191,8 @@ impl Default for ConnectionManagerConfig {
             connection_timeout: DEFAULT_CONNECTION_TIMEOUT,
             push_sender: None,
             resubscribe_automatically: false,
-            #[cfg(feature = "cache-aio")]
-            cache_config: None,
+            // #[cfg(feature = "cache-aio")]
+            // cache_config: None,
         }
     }
 }
@@ -210,8 +210,8 @@ struct Internals {
     retry_strategy: ExponentialBuilder,
     connection_config: AsyncConnectionConfig,
     subscription_tracker: Option<Mutex<SubscriptionTracker>>,
-    #[cfg(feature = "cache-aio")]
-    cache_manager: Option<CacheManager>,
+    // #[cfg(feature = "cache-aio")]
+    // cache_manager: Option<CacheManager>,
     _task_handle: HandleContainer,
 }
 
@@ -319,15 +319,15 @@ impl ConnectionManager {
             .set_connection_timeout(config.connection_timeout)
             .set_response_timeout(config.response_timeout);
 
-        #[cfg(feature = "cache-aio")]
-        let cache_manager = config
-            .cache_config
-            .as_ref()
-            .map(|cache_config| CacheManager::new(*cache_config));
-        #[cfg(feature = "cache-aio")]
-        if let Some(cache_manager) = cache_manager.as_ref() {
-            connection_config = connection_config.set_cache_manager(cache_manager.clone());
-        }
+        // #[cfg(feature = "cache-aio")]
+        // let cache_manager = config
+        //     .cache_config
+        //     .as_ref()
+        //     .map(|cache_config| CacheManager::new(*cache_config));
+        // #[cfg(feature = "cache-aio")]
+        // if let Some(cache_manager) = cache_manager.as_ref() {
+        //     connection_config = connection_config.set_cache_manager(cache_manager.clone());
+        // }
 
         let (oneshot_sender, oneshot_receiver) = oneshot::channel();
         let _task_handle = HandleContainer::new(
@@ -369,8 +369,8 @@ impl ConnectionManager {
             retry_strategy,
             connection_config,
             subscription_tracker,
-            #[cfg(feature = "cache-aio")]
-            cache_manager,
+            // #[cfg(feature = "cache-aio")]
+            // cache_manager,
             _task_handle,
         }));
 
@@ -427,15 +427,15 @@ impl ConnectionManager {
             return;
         };
         let internals_clone = internals.clone();
-        #[cfg(not(feature = "cache-aio"))]
+        // #[cfg(not(feature = "cache-aio"))]
         let connection_config = internals.connection_config.clone();
-        #[cfg(feature = "cache-aio")]
-        let mut connection_config = internals.connection_config.clone();
-        #[cfg(feature = "cache-aio")]
-        if let Some(manager) = internals.cache_manager.as_ref() {
-            let new_cache_manager = manager.clone_and_increase_epoch();
-            connection_config = connection_config.set_cache_manager(new_cache_manager);
-        }
+        // #[cfg(feature = "cache-aio")]
+        // let mut connection_config = internals.connection_config.clone();
+        // #[cfg(feature = "cache-aio")]
+        // if let Some(manager) = internals.cache_manager.as_ref() {
+        //     let new_cache_manager = manager.clone_and_increase_epoch();
+        //     connection_config = connection_config.set_cache_manager(new_cache_manager);
+        // }
         let new_connection: SharedRedisFuture<MultiplexedConnection> = async move {
             let additional_commands = match &internals_clone.subscription_tracker {
                 Some(subscription_tracker) => Some(
@@ -606,12 +606,12 @@ impl ConnectionManager {
         Ok(())
     }
 
-    /// Gets [`crate::caching::CacheStatistics`] for current connection if caching is enabled.
-    #[cfg(feature = "cache-aio")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-    pub fn get_cache_statistics(&self) -> Option<crate::caching::CacheStatistics> {
-        self.0.cache_manager.as_ref().map(|cm| cm.statistics())
-    }
+    // Gets [`crate::caching::CacheStatistics`] for current connection if caching is enabled.
+    // #[cfg(feature = "cache-aio")]
+    // #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
+    // pub fn get_cache_statistics(&self) -> Option<crate::caching::CacheStatistics> {
+    //     self.0.cache_manager.as_ref().map(|cm| cm.statistics())
+    // }
 }
 
 impl ConnectionLike for ConnectionManager {

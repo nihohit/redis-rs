@@ -14,13 +14,13 @@ use std::pin::Pin;
 #[cfg(feature = "tls-rustls")]
 use crate::tls::{inner_build_with_tls, TlsCertificates};
 
-#[cfg(feature = "cache-aio")]
-use crate::caching::CacheConfig;
-#[cfg(all(
-    feature = "cache-aio",
-    any(feature = "connection-manager", feature = "cluster-async")
-))]
-use crate::caching::CacheManager;
+// #[cfg(feature = "cache-aio")]
+// use crate::caching::CacheConfig;
+// #[cfg(all(
+//     feature = "cache-aio",
+//     any(feature = "connection-manager", feature = "cluster-async")
+// ))]
+// use crate::caching::CacheManager;
 
 /// The client type.
 #[derive(Debug, Clone)]
@@ -166,13 +166,13 @@ impl Client {
     }
 }
 
-#[cfg(feature = "cache-aio")]
-#[derive(Clone)]
-pub(crate) enum Cache {
-    Config(CacheConfig),
-    #[cfg(any(feature = "connection-manager", feature = "cluster-async"))]
-    Manager(CacheManager),
-}
+// #[cfg(feature = "cache-aio")]
+// #[derive(Clone)]
+// pub(crate) enum Cache {
+//     Config(CacheConfig),
+//     #[cfg(any(feature = "connection-manager", feature = "cluster-async"))]
+//     Manager(CacheManager),
+// }
 
 #[cfg(feature = "aio")]
 pub(crate) const DEFAULT_RESPONSE_TIMEOUT: Option<Duration> = Some(Duration::from_millis(500));
@@ -188,8 +188,8 @@ pub struct AsyncConnectionConfig {
     /// Maximum time to wait for a connection to be established
     pub(crate) connection_timeout: Option<Duration>,
     pub(crate) push_sender: Option<std::sync::Arc<dyn AsyncPushSender>>,
-    #[cfg(feature = "cache-aio")]
-    pub(crate) cache: Option<Cache>,
+    // #[cfg(feature = "cache-aio")]
+    // pub(crate) cache: Option<Cache>,
     pub(crate) dns_resolver: Option<std::sync::Arc<dyn AsyncDNSResolver>>,
 }
 
@@ -200,8 +200,8 @@ impl Default for AsyncConnectionConfig {
             response_timeout: DEFAULT_RESPONSE_TIMEOUT,
             connection_timeout: DEFAULT_CONNECTION_TIMEOUT,
             push_sender: Default::default(),
-            #[cfg(feature = "cache-aio")]
-            cache: Default::default(),
+            // #[cfg(feature = "cache-aio")]
+            // cache: Default::default(),
             dns_resolver: Default::default(),
         }
     }
@@ -267,21 +267,21 @@ impl AsyncConnectionConfig {
         self
     }
 
-    /// Sets cache config for MultiplexedConnection, check CacheConfig for more details.
-    #[cfg(feature = "cache-aio")]
-    pub fn set_cache_config(mut self, cache_config: CacheConfig) -> Self {
-        self.cache = Some(Cache::Config(cache_config));
-        self
-    }
+    // /// Sets cache config for MultiplexedConnection, check CacheConfig for more details.
+    // #[cfg(feature = "cache-aio")]
+    // pub fn set_cache_config(mut self, cache_config: CacheConfig) -> Self {
+    //     self.cache = Some(Cache::Config(cache_config));
+    //     self
+    // }
 
-    #[cfg(all(
-        feature = "cache-aio",
-        any(feature = "connection-manager", feature = "cluster-async")
-    ))]
-    pub(crate) fn set_cache_manager(mut self, cache_manager: CacheManager) -> Self {
-        self.cache = Some(Cache::Manager(cache_manager));
-        self
-    }
+    // #[cfg(all(
+    //     feature = "cache-aio",
+    //     any(feature = "connection-manager", feature = "cluster-async")
+    // ))]
+    // pub(crate) fn set_cache_manager(mut self, cache_manager: CacheManager) -> Self {
+    //     self.cache = Some(Cache::Manager(cache_manager));
+    //     self
+    // }
 
     /// Set the DNS resolver for the underlying TCP connection.
     ///

@@ -584,8 +584,8 @@ let primary = sentinel.get_async_connection().await.unwrap();
 #[cfg(feature = "aio")]
 pub use crate::client::AsyncConnectionConfig;
 pub use crate::client::Client;
-#[cfg(feature = "cache-aio")]
-pub use crate::cmd::CommandCacheConfig;
+// #[cfg(feature = "cache-aio")]
+// pub use crate::cmd::CommandCacheConfig;
 pub use crate::cmd::{cmd, pack_command, pipe, Arg, Cmd, Iter};
 pub use crate::commands::{
     Commands, ControlFlow, CopyOptions, Direction, FlushAllOptions, FlushDbOptions,
@@ -717,9 +717,9 @@ mod tls;
 #[cfg_attr(docsrs, doc(cfg(feature = "tls-rustls")))]
 pub use crate::tls::{ClientTlsConfig, TlsCertificates};
 
-#[cfg(feature = "cache-aio")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-pub mod caching;
+// #[cfg(feature = "cache-aio")]
+// #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
+// pub mod caching;
 
 mod client;
 mod cmd;
