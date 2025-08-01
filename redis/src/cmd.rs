@@ -93,9 +93,9 @@ pub struct Cmd {
     cache: Option<CommandCacheConfig>,
 }
 
+/// asdasd
 #[cfg(feature = "aio")]
 #[derive(Clone)]
-
 pub struct FrozenCmd {
     pub(crate) data: bytes::Bytes,
     // Arg::Simple contains the range for each argument
@@ -108,9 +108,17 @@ pub struct FrozenCmd {
     pub(crate) data_is_full_packaged_cmd: bool,
 }
 
+impl FrozenCmd {
+    /// asdasda
+    pub fn get_data(&self) -> &[u8] {
+        &self.data
+    }
+}
+
 #[cfg(feature = "aio")]
 impl Cmd {
-    pub(crate) fn freeze(self) -> FrozenCmd {
+    /// asdasdasd
+    pub fn freeze(self) -> FrozenCmd {
         let data_is_full_packaged_cmd = self.data_is_complete();
         let data = if self.data_is_complete() {
             self.data.into()

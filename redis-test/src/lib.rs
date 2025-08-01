@@ -37,7 +37,7 @@ use redis::{Cmd, ConnectionLike, ErrorKind, Pipeline, RedisError, RedisResult, V
 use futures::{future, FutureExt};
 
 #[cfg(feature = "aio")]
-use redis::{aio::ConnectionLike as AioConnectionLike, RedisFuture};
+use redis::{aio::ConnectionLike as AioConnectionLike, FrozenCmd, RedisFuture};
 
 /// Helper trait for converting test values into a `redis::Value` returned from a
 /// `MockRedisConnection`. This is necessary because neither `redis::types::ToRedisArgs`
@@ -257,12 +257,10 @@ impl ConnectionLike for MockRedisConnection {
 
 #[cfg(feature = "aio")]
 impl AioConnectionLike for MockRedisConnection {
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
-        let packed_cmd = cmd.get_packed_command();
-        let response = <MockRedisConnection as ConnectionLike>::req_packed_command(
-            self,
-            packed_cmd.as_slice(),
-        );
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
+        let packed_cmd = cmd.get_data();
+        let response =
+            <MockRedisConnection as ConnectionLike>::req_packed_command(self, packed_cmd);
         future::ready(response).boxed()
     }
 

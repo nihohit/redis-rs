@@ -44,8 +44,7 @@ async fn bench_parallel_requests(con: &mut ClusterConnection) {
     let num_parallel = 100;
     let cmds: Vec<_> = (0..num_parallel)
         .map(|i| {
-            let mut cmd = redis::cmd("SET");
-            cmd.arg(format!("foo{i}")).arg(i);
+            let cmd = redis::cmd("SET").arg(format!("foo{i}")).arg(i);
             (cmd, con.clone())
         })
         .collect();

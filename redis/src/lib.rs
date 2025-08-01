@@ -581,9 +581,9 @@ let primary = sentinel.get_async_connection().await.unwrap();
 )]
 
 // public api
-#[cfg(feature = "aio")]
-pub use crate::client::AsyncConnectionConfig;
 pub use crate::client::Client;
+#[cfg(feature = "aio")]
+pub use crate::{client::AsyncConnectionConfig, cmd::FrozenCmd};
 // #[cfg(feature = "cache-aio")]
 // pub use crate::cmd::CommandCacheConfig;
 pub use crate::cmd::{cmd, pack_command, pipe, Arg, Cmd, Iter};

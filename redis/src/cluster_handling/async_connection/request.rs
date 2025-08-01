@@ -327,8 +327,6 @@ impl<C> Request<C> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use tokio::sync::oneshot;
 
     use crate::{
@@ -367,7 +365,7 @@ mod tests {
                 retry,
                 sender: ResultExpectation::External(sender),
                 cmd: super::CmdArg::Cmd {
-                    cmd: Arc::new(crate::cmd("foo")),
+                    cmd: crate::cmd("foo").freeze(),
                     routing: routing::InternalSingleNodeRouting::Random.into(),
                 },
             },

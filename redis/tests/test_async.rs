@@ -40,7 +40,7 @@ mod basic_async {
     }
 
     impl ConnectionLike for Wrapper {
-        fn req_packed_command<'a>(&'a mut self, cmd: redis::Cmd) -> RedisFuture<'a, Value> {
+        fn req_packed_command<'a>(&'a mut self, cmd: redis::FrozenCmd) -> RedisFuture<'a, Value> {
             match self {
                 Wrapper::MultiplexedConnection(conn) => conn.req_packed_command(cmd),
                 #[cfg(feature = "connection-manager")]
@@ -236,7 +236,8 @@ mod basic_async {
                     .arg(username)
                     .arg("on")
                     .arg("+acl")
-                    .arg(format!(">{password}"));
+                    .arg(format!(">{password}"))
+                    .freeze();
                 assert_eq!(con.req_packed_command(set_user_cmd).await, Ok(Value::Okay));
 
                 let redis = redis_settings()
@@ -721,7 +722,7 @@ mod basic_async {
             async move {
                 let mut connection = ctx.async_connection().await.unwrap();
                 connection.set_response_timeout(Duration::from_millis(1));
-                let cmd = redis::cmd("BLPOP").arg("foo").arg(0); // 0 timeout blocks indefinitely
+                let cmd = redis::cmd("BLPOP").arg("foo").arg(0).freeze(); // 0 timeout blocks indefinitely
                 let result = connection.req_packed_command(cmd).await;
                 assert!(result.is_err());
                 assert!(result.unwrap_err().is_timeout());
@@ -2133,7 +2134,7 @@ mod basic_async {
                     .await
                     .unwrap();
                 manager
-                    .send_packed_command(cmd("CLIENT").arg("TRACKING").arg("ON"))
+                    .send_packed_command(cmd("CLIENT").arg("TRACKING").arg("ON").freeze())
                     .await
                     .unwrap();
                 let pipe = build_simple_pipeline_for_invalidation();

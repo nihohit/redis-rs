@@ -21,9 +21,9 @@ mod cluster_async {
         cluster::ClusterClient,
         cluster_async::Connect,
         cluster_routing::{MultipleNodeRoutingInfo, RoutingInfo, SingleNodeRoutingInfo},
-        cmd, from_owned_redis_value, parse_redis_value, pipe, AsyncCommands, Cmd, InfoDict,
-        IntoConnectionInfo, ProtocolVersion, RedisError, RedisFuture, RedisResult, Script,
-        ServerErrorKind, Value,
+        cmd, from_owned_redis_value, parse_redis_value, pipe, AsyncCommands, Cmd, FrozenCmd,
+        InfoDict, IntoConnectionInfo, ProtocolVersion, RedisError, RedisFuture, RedisResult,
+        Script, ServerErrorKind, Value,
     };
     use redis_test::cluster::{RedisCluster, RedisClusterConfiguration};
     use redis_test::server::use_protocol;
@@ -145,7 +145,7 @@ mod cluster_async {
                 let routing = RoutingInfo::SingleNode(single_node_route);
                 assert_eq!(
                     connection
-                        .route_command(redis::cmd("FLUSHALL"), routing)
+                        .route_command(redis::cmd("FLUSHALL").freeze(), routing)
                         .await
                         .unwrap(),
                     Value::Okay
@@ -172,7 +172,7 @@ mod cluster_async {
                 let mut connection = cluster.async_connection().await;
                 // The other sections change with time.
                 // TODO - after we remove support of redis 6, we can add more than a single section - .arg("Persistence").arg("Memory").arg("Replication")
-                let cmd = redis::cmd("INFO").arg("Clients");
+                let cmd = redis::cmd("INFO").arg("Clients").freeze();
 
                 let value = connection
                     .route_command(
@@ -251,7 +251,7 @@ mod cluster_async {
                 let route_to_all_nodes = redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes;
                 let routing = RoutingInfo::MultiNode((route_to_all_nodes, None));
                 let res = connection
-                    .route_command(redis::cmd("INFO"), routing)
+                    .route_command(redis::cmd("INFO").freeze(), routing)
                     .await
                     .unwrap();
                 let (addresses, infos) = split_to_addresses_and_info(res);
@@ -274,7 +274,7 @@ mod cluster_async {
                     redis::cluster_routing::MultipleNodeRoutingInfo::AllMasters;
                 let routing = RoutingInfo::MultiNode((route_to_all_primaries, None));
                 let res = connection
-                    .route_command(redis::cmd("INFO"), routing)
+                    .route_command(redis::cmd("INFO").freeze(), routing)
                     .await
                     .unwrap();
                 let (addresses, infos) = split_to_addresses_and_info(res);
@@ -635,7 +635,7 @@ mod cluster_async {
     }
 
     impl ConnectionLike for ErrorConnection {
-        fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+        fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
             if ERROR.load(Ordering::SeqCst) {
                 Box::pin(async move {
                     Err(RedisError::from((
@@ -1029,7 +1029,7 @@ mod cluster_async {
         assert_eq!(connection_count_clone.load(Ordering::Relaxed), 4);
 
         let value = runtime.block_on(connection.route_command(
-            cmd("ECHO"),
+            cmd("ECHO").freeze(),
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6379,
@@ -1043,7 +1043,7 @@ mod cluster_async {
         );
 
         let value = runtime.block_on(connection.route_command(
-            cmd("ECHO"),
+            cmd("ECHO").freeze(),
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6379,
@@ -1490,7 +1490,7 @@ mod cluster_async {
             },
         );
 
-        let cmd = cmd("GET").arg("test");
+        let cmd = cmd("GET").arg("test").freeze();
         let _ = runtime.block_on(connection.route_command(
             cmd.clone(),
             RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllMasters, None)),
@@ -2085,7 +2085,7 @@ mod cluster_async {
             },
         );
 
-        let res = runtime.block_on(connection.req_packed_command(redis::cmd("PING")));
+        let res = runtime.block_on(connection.req_packed_command(redis::cmd("PING").freeze()));
         assert!(res.is_ok());
     }
 
@@ -2102,7 +2102,7 @@ mod cluster_async {
                 let mut connection = cluster.async_connection().await;
                 drop(cluster);
                 for _ in 0..5 {
-                    let cmd = cmd("PING");
+                    let cmd = cmd("PING").freeze();
                     let result = connection
                         .route_command(
                             cmd.clone(),
@@ -2138,7 +2138,7 @@ mod cluster_async {
                 let mut connection = cluster.async_connection().await;
                 drop(cluster);
 
-                let cmd = cmd("PING");
+                let cmd = cmd("PING").freeze();
 
                 let result = connection
                     .route_command(
@@ -2196,7 +2196,7 @@ mod cluster_async {
                 // explicitly route to all primaries and request all succeeded
                 let result = connection
                     .route_command(
-                        cmd,
+                        cmd.freeze(),
                         RoutingInfo::MultiNode((
                             MultipleNodeRoutingInfo::AllMasters,
                             Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),
@@ -2400,7 +2400,7 @@ mod cluster_async {
         async fn check_if_redis_6(conn: &mut ClusterConnection) -> bool {
             let response = conn
                 .route_command(
-                    cmd("INFO").arg("server"),
+                    cmd("INFO").arg("server").freeze(),
                     RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random),
                 )
                 .await
@@ -2929,7 +2929,7 @@ mod cluster_async {
                     let cmd = cmd("PING");
                     let _ = pubsub_conn
                         .route_command(
-                            cmd,
+                            cmd.freeze(),
                             RoutingInfo::MultiNode((
                                 MultipleNodeRoutingInfo::AllMasters,
                                 Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),

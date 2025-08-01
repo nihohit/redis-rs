@@ -1015,6 +1015,7 @@ mod tests_routing {
         ResponsePolicy, Route, RoutingInfo, SingleNodeRoutingInfo, SlotAddr,
     };
     use crate::cluster_routing::slot;
+    use crate::cmd::ArgsIterator;
     use crate::{cmd, parser::parse_redis_value, Value};
     use core::panic;
 
