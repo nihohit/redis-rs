@@ -1024,20 +1024,42 @@ mod tests {
             .collect()
     }
 
-    fn assert_arg_equallity(c1: &impl ArgsIterator, c2: &impl ArgsIterator) {
-        let c1: Vec<_> = args_iter_to_str(c1);
-        let c2: Vec<_> = args_iter_to_str(c2);
-        assert_eq!(c1, c2);
+    fn assert_arg_equality(c1: &impl ArgsIterator, c2: &impl ArgsIterator) {
+        let v1: Vec<_> = c1.args_iter().collect::<Vec<_>>();
+        let v2: Vec<_> = c2.args_iter().collect::<Vec<_>>();
+        assert_eq!(
+            v1,
+            v2,
+            "{:?} - {:?}",
+            args_iter_to_str(c1),
+            args_iter_to_str(c2)
+        );
+    }
+
+    fn assert_args_iter_does_not_change(cmd: &Cmd) {
+        let clone = cmd.clone();
+        let prev_iter = clone.args_iter().collect::<Vec<_>>();
+        let freeze = cmd.clone().freeze();
+        let next_iter = freeze.args_iter().collect::<Vec<_>>();
+        assert_eq!(
+            prev_iter,
+            next_iter,
+            "{:?} - {:?}",
+            args_iter_to_str(&clone),
+            args_iter_to_str(&freeze)
+        );
     }
 
     fn assert_practical_equivalent(c1: Cmd, c2: Cmd) {
         assert_eq!(c1.get_packed_command(), c2.get_packed_command());
-        assert_arg_equallity(&c1, &c2);
+        assert_arg_equality(&c1, &c2);
         #[cfg(feature = "bytes")]
         {
+            assert_args_iter_does_not_change(&c1);
+            assert_args_iter_does_not_change(&c2);
             let c1 = c1.freeze();
             let c2 = c2.freeze();
-            assert_arg_equallity(&c1, &c2);
+            assert_arg_equality(&c1, &c2);
             match (c1.data_is_full_packaged_cmd, c2.data_is_full_packaged_cmd) {
                 (true, false) => todo!(),
                 (false, true) => todo!(),
@@ -1063,7 +1085,7 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
-        todo!();
+        todo!("need to verify that the arg iter and freeze are correct");
     }
 
     #[test]
@@ -1079,7 +1101,7 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
-        todo!();
+        todo!("need to verify that the arg iter and freeze are correct");
     }
 
     #[test]
