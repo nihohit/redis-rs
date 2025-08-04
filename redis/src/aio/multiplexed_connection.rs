@@ -1,7 +1,7 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 // #[cfg(feature = "cache-aio")]
 // use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::{count_digits, FrozenCmd};
+use crate::cmd::{arg_count_vec, FrozenCmd};
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
@@ -311,8 +311,7 @@ where
 
         let data = match input {
             Input::Separate { arg_count, data } => {
-                let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
-                crate::cmd::write_count(&mut vec, arg_count).unwrap();
+                let vec = arg_count_vec(arg_count);
                 match self_.sink_stream.as_mut().start_send(vec.into()) {
                     Ok(()) => data,
                     Err(err) => {
@@ -603,16 +602,11 @@ impl MultiplexedConnection {
         self.pipeline
             .send_recv(
                 match cmd.0 {
-                    cmd::FrozenRepr::FullyPackaged { data, .. } => data.clone(),
-                    cmd::FrozenRepr::Copy(cmd) => todo!(),
-                }
-                if cmd.data_is_full_packaged_cmd {
-                    Input::Full(cmd.data.clone())
-                } else {
-                    Input::Separate {
-                        arg_count: cmd.args.len(),
-                        data: cmd.data.clone(),
-                    }
+                    cmd::FrozenRepr::FullyPackaged { data, args } => Input::Separate {
+                        arg_count: args.len(),
+                        data: data.clone(),
+                    },
+                    cmd::FrozenRepr::Copy(cmd) => Input::Full(cmd.get_packed_command().into()),
                 },
                 None,
                 self.response_timeout,

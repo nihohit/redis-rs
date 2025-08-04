@@ -136,23 +136,64 @@ impl Cmd {
 impl ArgsIterator for FrozenCmd {
     /// Returns an iterator over the arguments in this command (including the command name itself)
     fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
-        self.args.iter().map(move |arg| match arg {
-            Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
+        #[derive(Clone)]
+        struct ArgsIterator<'a> {
+            cmd: &'a FrozenCmd,
+            index: usize,
+        }
 
-            Arg::Cursor => Arg::Cursor,
-        })
+        impl<'a> ExactSizeIterator for ArgsIterator<'a> {
+            fn len(&self) -> usize {
+                match &self.cmd.0 {
+                    FrozenRepr::FullyPackaged { args, .. } => args.len(),
+                    FrozenRepr::Copy(cmd) => cmd.args.len(),
+                }
+            }
+        }
+
+        impl<'a> Iterator for ArgsIterator<'a> {
+            fn next(&mut self) -> Option<Self::Item> {
+                let result = match &self.cmd.0 {
+                    FrozenRepr::FullyPackaged { data, args } => {
+                        args.get(self.index).map(|arg| match arg {
+                            Arg::Simple(range) => Arg::Simple(&data[range.start..range.end]),
+                            Arg::Cursor => Arg::Cursor,
+                        })
+                    }
+                    FrozenRepr::Copy(cmd) => cmd.args.get(self.index).map(|arg| match arg {
+                        Arg::Simple(range) => Arg::Simple(&cmd.data[range.start..range.end]),
+                        Arg::Cursor => Arg::Cursor,
+                    }),
+                };
+                if result.is_some() {
+                    self.index += 1;
+                };
+                result
+            }
+
+            type Item = Arg<&'a [u8]>;
+        }
+        ArgsIterator {
+            cmd: self,
+            index: 0,
+        }
     }
 
     // Get a reference to the argument at `idx`
     #[cfg(any(feature = "cluster", feature = "cache-aio"))]
     fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
-        if idx >= self.args.len() {
-            return None;
-        }
+        match &self.0 {
+            FrozenRepr::FullyPackaged { data, args } => {
+                if idx >= args.len() {
+                    return None;
+                }
 
-        match &self.args[idx] {
-            Arg::Simple(range) => Some(&self.data[range.start..range.end]),
-            _ => None,
+                match &args[idx] {
+                    Arg::Simple(range) => Some(&data[range.start..range.end]),
+                    _ => None,
+                }
+            }
+            FrozenRepr::Copy(cmd) => cmd.arg_idx(idx),
         }
     }
 }
@@ -1009,6 +1050,12 @@ pub fn pipe() -> Pipeline {
     Pipeline::new()
 }
 
+pub(crate) fn arg_count_vec(arg_count: usize) -> Vec<u8> {
+    let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
+    crate::cmd::write_count(&mut vec, arg_count).unwrap();
+    vec
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1051,6 +1098,13 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "bytes")]
+    fn assert_sent_message_equality(cmd: &Cmd, bytes: &bytes::Bytes, arg_count: usize) {
+        let mut vec = arg_count_vec(arg_count);
+        vec.extend_from_slice(&bytes);
+        assert_eq!(vec, cmd.get_packed_command());
+    }
+
     fn assert_practical_equivalent(c1: Cmd, c2: Cmd) {
         assert_eq!(c1.get_packed_command(), c2.get_packed_command());
         assert_arg_equality(&c1, &c2);
@@ -1061,12 +1115,14 @@ mod tests {
             let c1 = c1.freeze();
             let c2 = c2.freeze();
             assert_arg_equality(&c1, &c2);
-            match (c1.data_is_full_packaged_cmd, c2.data_is_full_packaged_cmd) {
-                (true, false) => todo!(),
-                (false, true) => todo!(),
-                _ => {
-                    assert_eq!(c1.data, c2.data);
+            match (&c1.0, &c2.0) {
+                (FrozenRepr::FullyPackaged { data, args }, FrozenRepr::Copy(cmd)) => {
+                    assert_sent_message_equality(cmd, data, args.len());
                 }
+                (FrozenRepr::Copy(cmd), FrozenRepr::FullyPackaged { data, args }) => {
+                    assert_sent_message_equality(cmd, data, args.len());
+                }
+                _ => {}
             }
         }
     }
@@ -1086,7 +1142,14 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
-        todo!("need to verify that the arg iter and freeze are correct");
+        let args_vec: Vec<&[u8]> = vec![b"key", b"value", b"42", b"phone", b"barz"];
+        let args_vec: Vec<_> = args_vec.into_iter().map(Arg::Simple).collect();
+        assert_eq!(cmd.args_iter().collect::<Vec<_>>(), args_vec);
+        assert_args_iter_does_not_change(&cmd);
+        let freeze = cmd.clone().freeze();
+        if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
+            assert_sent_message_equality(&cmd, &data, args.len());
+        };
     }
 
     #[test]
@@ -1102,7 +1165,18 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
-        todo!("need to verify that the arg iter and freeze are correct");
+        let args_vec: Vec<&[u8]> = vec![b"key", b"value", b"42", b"phone", b"barz"];
+        let args_vec: Vec<_> = args_vec
+            .into_iter()
+            .map(Arg::Simple)
+            .chain(std::iter::once(Arg::Cursor))
+            .collect();
+        assert_eq!(cmd.args_iter().collect::<Vec<_>>(), args_vec);
+        assert_args_iter_does_not_change(&cmd);
+        let freeze = cmd.clone().freeze();
+        if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
+            assert_sent_message_equality(&cmd, &data, args.len());
+        };
     }
 
     #[test]
