@@ -109,9 +109,13 @@ pub(crate) enum FrozenRepr {
 #[cfg(feature = "aio")]
 impl FrozenCmd {
     /// asdasda
-    pub fn get_data(&self) -> Vec<u8> {
+    pub fn get_packed_command(&self) -> Vec<u8> {
         match &self.0 {
-            FrozenRepr::FullyPackaged { data, .. } => data.clone().to_vec(),
+            FrozenRepr::FullyPackaged { data, args } => {
+                let mut vec = arg_count_vec(args.len());
+                vec.extend_from_slice(&data);
+                vec
+            }
             FrozenRepr::Copy(cmd) => cmd.get_packed_command(),
         }
     }

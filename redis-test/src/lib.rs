@@ -258,7 +258,7 @@ impl ConnectionLike for MockRedisConnection {
 #[cfg(feature = "aio")]
 impl AioConnectionLike for MockRedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
-        let packed_cmd = cmd.get_data();
+        let packed_cmd = cmd.get_packed_command();
         let response =
             <MockRedisConnection as ConnectionLike>::req_packed_command(self, &packed_cmd);
         future::ready(response).boxed()
