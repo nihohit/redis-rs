@@ -93,6 +93,7 @@ pub struct Cmd {
 #[derive(Clone)]
 pub struct FrozenCmd(pub(crate) FrozenRepr);
 
+#[cfg(feature = "aio")]
 #[derive(Clone)]
 pub(crate) enum FrozenRepr {
     FullyPackaged {
@@ -1050,6 +1051,7 @@ pub fn pipe() -> Pipeline {
     Pipeline::new()
 }
 
+#[cfg(feature = "aio")]
 pub(crate) fn arg_count_vec(arg_count: usize) -> Vec<u8> {
     let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
     crate::cmd::write_count(&mut vec, arg_count).unwrap();
@@ -1084,6 +1086,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "aio")]
     fn assert_args_iter_does_not_change(cmd: &Cmd) {
         let clone = cmd.clone();
         let prev_iter = clone.args_iter().collect::<Vec<_>>();
@@ -1101,7 +1104,7 @@ mod tests {
     #[cfg(feature = "bytes")]
     fn assert_sent_message_equality(cmd: &Cmd, bytes: &bytes::Bytes, arg_count: usize) {
         let mut vec = arg_count_vec(arg_count);
-        vec.extend_from_slice(&bytes);
+        vec.extend_from_slice(bytes);
         assert_eq!(vec, cmd.get_packed_command());
     }
 
@@ -1145,11 +1148,14 @@ mod tests {
         let args_vec: Vec<&[u8]> = vec![b"key", b"value", b"42", b"phone", b"barz"];
         let args_vec: Vec<_> = args_vec.into_iter().map(Arg::Simple).collect();
         assert_eq!(cmd.args_iter().collect::<Vec<_>>(), args_vec);
-        assert_args_iter_does_not_change(&cmd);
-        let freeze = cmd.clone().freeze();
-        if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
-            assert_sent_message_equality(&cmd, &data, args.len());
-        };
+        #[cfg(feature = "aio")]
+        {
+            assert_args_iter_does_not_change(&cmd);
+            let freeze = cmd.clone().freeze();
+            if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
+                assert_sent_message_equality(&cmd, &data, args.len());
+            };
+        }
     }
 
     #[test]
@@ -1172,11 +1178,14 @@ mod tests {
             .chain(std::iter::once(Arg::Cursor))
             .collect();
         assert_eq!(cmd.args_iter().collect::<Vec<_>>(), args_vec);
-        assert_args_iter_does_not_change(&cmd);
-        let freeze = cmd.clone().freeze();
-        if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
-            assert_sent_message_equality(&cmd, &data, args.len());
-        };
+        #[cfg(feature = "aio")]
+        {
+            assert_args_iter_does_not_change(&cmd);
+            let freeze = cmd.clone().freeze();
+            if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
+                assert_sent_message_equality(&cmd, &data, args.len());
+            };
+        }
     }
 
     #[test]

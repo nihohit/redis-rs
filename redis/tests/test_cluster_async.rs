@@ -1383,6 +1383,12 @@ mod cluster_async {
                     ports_clone.lock().unwrap().push(port);
                     return Err(Ok(Value::SimpleString("OK".into())));
                 }
+                println!(
+                    "recv: {}, packed: {}",
+                    String::from_utf8(received_cmd.to_vec()).unwrap(),
+                    String::from_utf8(packed_cmd.clone()).unwrap()
+                );
+
                 Ok(())
             },
         );
