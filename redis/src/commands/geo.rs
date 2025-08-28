@@ -1,11 +1,7 @@
 //! Defines types to use with the geospatial commands.
 
 use crate::errors::{invalid_type_error, ParsingError};
-
-use crate::{
-    cmd::count_digits,
-    types::{FromRedisValue, RedisWrite, ToRedisArgs, Value},
-};
+use crate::types::{FromRedisValue, RedisWrite, ToRedisArgs, Value};
 
 /// Units used by [`geo_dist`][1] and [`geo_radius`][2].
 ///
@@ -204,7 +200,7 @@ impl ToRedisArgs for RadiusOptions {
 
         if let Some(n) = self.count {
             out.write_arg(b"COUNT");
-            out.write_arg_fmt(n, Some(count_digits(n)));
+            out.write_arg_fmt(n);
         }
 
         match self.order {

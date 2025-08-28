@@ -1,7 +1,7 @@
 #![cfg(feature = "script")]
 use sha1_smol::Sha1;
 
-use crate::cmd::{bulk_len, cmd};
+use crate::cmd::cmd;
 use crate::connection::ConnectionLike;
 use crate::errors::ServerErrorKind;
 use crate::types::{FromRedisValue, RedisResult, ToRedisArgs};
@@ -217,9 +217,9 @@ impl<'a> ScriptInvocation<'a> {
             .keys
             .iter()
             .chain(self.args.iter())
-            .fold(0, |acc, e| acc + bulk_len(e.len()))
-            + bulk_len(7) /* "EVALSHA".len() */
-            + bulk_len(self.script.hash.len())
+            .fold(0, |acc, e| acc + e.len())
+            + 7 /* "EVALSHA".len() */
+            + self.script.hash.len()
             + 4 /* Slots reserved for the length of keys. */
     }
 
@@ -245,12 +245,7 @@ mod tests {
         let invocation = script.key("dummy");
         let estimated_buflen = invocation.estimate_buflen();
         let cmd = invocation.eval_cmd();
-        assert!(
-            estimated_buflen <= cmd.capacity().1,
-            "buflen: {}, capacity: {}",
-            estimated_buflen,
-            cmd.capacity().1
-        );
+        assert!(estimated_buflen >= cmd.capacity().1);
         let expected = "*4\r\n$7\r\nEVALSHA\r\n$40\r\n4a2267357833227dd98abdedb8cf24b15a986445\r\n$1\r\n1\r\n$5\r\ndummy\r\n";
         assert_eq!(
             expected,

@@ -67,7 +67,7 @@ impl ResponseAggregate {
 }
 
 enum Input {
-    Separate { arg_count: usize, data: Bytes },
+    Separate xc c ,
     Full(Vec<u8>),
 }
 
@@ -600,12 +600,9 @@ impl MultiplexedConnection {
         // }
         self.pipeline
             .send_recv(
-                match cmd.0 {
-                    cmd::FrozenRepr::FullyPackaged { data, args } => Input::Separate {
-                        arg_count: args.len(),
-                        data: data.clone(),
-                    },
-                    cmd::FrozenRepr::Copy(cmd) => Input::Full(cmd.get_packed_command()),
+                Input::Separate {
+                    arg_count: cmd.0.args.len(),
+                    data: cmd.0.data,
                 },
                 None,
                 self.response_timeout,
