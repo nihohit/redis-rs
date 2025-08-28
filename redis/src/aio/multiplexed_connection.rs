@@ -1,7 +1,7 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 // #[cfg(feature = "cache-aio")]
 // use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::{arg_count_vec, FrozenCmd};
+use crate::cmd::FrozenCmd;
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
@@ -68,7 +68,7 @@ impl ResponseAggregate {
 
 enum Input {
     Separate { arg_count: usize, data: Bytes },
-    Full(Bytes),
+    Full(Vec<u8>),
 }
 
 struct InFlight {
@@ -144,7 +144,7 @@ where
         // #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> Self
     where
-        T: Sink<Bytes, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: for<'a> Sink<&'a [u8], Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
     {
         PipelineSink {
             sink_stream,
@@ -267,7 +267,7 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<Bytes, Error = RedisError>,
+    T: for<'a> Sink<&'a [u8], Error = RedisError>,
     T: Stream<Item = RedisResult<Value>>,
     T: 'static,
 {
@@ -309,20 +309,19 @@ where
             return Err(());
         }
 
-        let data = match input {
+        let mut send_to_sink = |byte_slice| self_.sink_stream.as_mut().start_send(byte_slice);
+        let result = match input {
             Input::Separate { arg_count, data } => {
-                let vec = arg_count_vec(arg_count);
-                match self_.sink_stream.as_mut().start_send(vec.into()) {
-                    Ok(()) => data,
-                    Err(err) => {
-                        let _ = output.send(Err(err));
-                        return Err(());
-                    }
-                }
+                let mut buffer = itoa::Buffer::new();
+                let byte_slice = buffer.format(arg_count).as_bytes();
+                send_to_sink(b"*")
+                    .and_then(|_| send_to_sink(byte_slice))
+                    .and_then(|_| send_to_sink(b"\r\n"))
+                    .and_then(|_| send_to_sink(&data))
             }
-            Input::Full(items) => items,
+            Input::Full(full_command) => send_to_sink(&full_command),
         };
-        match self_.sink_stream.start_send(data) {
+        match result {
             Ok(()) => {
                 let response_aggregate = ResponseAggregate::new(expectation);
                 let entry = InFlight {
@@ -378,7 +377,7 @@ impl Pipeline {
         // #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<Bytes, Error = RedisError>,
+        T: for<'a> Sink<&'a [u8], Error = RedisError>,
         T: Stream<Item = RedisResult<Value>>,
         T: Unpin + Send + 'static,
     {
@@ -606,7 +605,7 @@ impl MultiplexedConnection {
                         arg_count: args.len(),
                         data: data.clone(),
                     },
-                    cmd::FrozenRepr::Copy(cmd) => Input::Full(cmd.get_packed_command().into()),
+                    cmd::FrozenRepr::Copy(cmd) => Input::Full(cmd.get_packed_command()),
                 },
                 None,
                 self.response_timeout,
@@ -645,7 +644,7 @@ impl MultiplexedConnection {
         let value = self
             .pipeline
             .send_recv(
-                Input::Full(pipeline.get_packed_pipeline().into()),
+                Input::Full(pipeline.get_packed_pipeline()),
                 Some(PipelineResponseExpectation {
                     skipped_response_count: offset,
                     expected_response_count: count,
