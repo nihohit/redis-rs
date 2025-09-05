@@ -8,7 +8,7 @@ use futures_util::{
 use std::pin::Pin;
 #[cfg(feature = "cache-aio")]
 use std::time::Duration;
-use std::{fmt, io::Write, ops::Range};
+use std::{fmt, io::Write};
 
 use crate::pipeline::Pipeline;
 use crate::types::{from_owned_redis_value, FromRedisValue, RedisResult, RedisWrite, ToRedisArgs};
@@ -76,8 +76,8 @@ impl Default for CommandCacheConfig {
 /// Represents redis commands.
 #[derive(Clone)]
 pub struct Cmd {
-    data: Vec<u8>,
-    // Arg::Simple contains the range for each argument
+    pub(crate) data: Vec<u8>,
+    // Arg::Simple contains the offset that marks the end of the argument
     args: Vec<Arg<usize>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
@@ -134,38 +134,19 @@ impl Cmd {
 impl ArgsIterator for FrozenCmd {
     /// Returns an iterator over the arguments in this command (including the command name itself)
     fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
-        #[derive(Clone)]
-        struct ArgsIterator<'a> {
-            cmd: &'a FrozenCmd,
-            index: usize,
-        }
-
-        impl<'a> ExactSizeIterator for ArgsIterator<'a> {
-            fn len(&self) -> usize {
-                self.cmd.0.args.len()
-            }
-        }
-
-        impl<'a> Iterator for ArgsIterator<'a> {
-            fn next(&mut self) -> Option<Self::Item> {
-                let result = self.cmd.0.args.get(self.index).map(|arg| match arg {
-                    Arg::Simple(range) => Arg::Simple(&self.cmd.0.data[range.start..range.end]),
-                    Arg::Cursor => Arg::Cursor,
-                });
-
-                if result.is_some() {
-                    self.index += 1;
-                };
-                result
+        let mut prev = 0;
+        self.0.args.iter().map(move |arg| match *arg {
+            Arg::Simple(i) => {
+                let arg = Arg::Simple(&self.0.data[prev..i]);
+                prev = i;
+                arg
             }
 
-            type Item = Arg<&'a [u8]>;
-        }
-        ArgsIterator {
-            cmd: self,
-            index: 0,
-        }
+            Arg::Cursor => Arg::Cursor,
+        })
     }
+
+    // Get a reference to the argument at `idx`
 
     // Get a reference to the argument at `idx`
     #[cfg(any(feature = "cluster", feature = "cache-aio"))]
@@ -174,10 +155,22 @@ impl ArgsIterator for FrozenCmd {
             return None;
         }
 
-        match &self.0.args[idx] {
-            Arg::Simple(range) => Some(&self.0.data[range.start..range.end]),
-            _ => None,
+        let start = if idx == 0 {
+            0
+        } else {
+            match self.0.args[idx - 1] {
+                Arg::Simple(n) => n,
+                _ => 0,
+            }
+        };
+        let end = match self.0.args[idx] {
+            Arg::Simple(n) => n,
+            _ => 0,
+        };
+        if start == 0 && end == 0 {
+            return None;
         }
+        Some(&self.0.data[start..end])
     }
 }
 
@@ -469,30 +462,26 @@ where
 
 impl RedisWrite for Cmd {
     fn write_arg(&mut self, arg: &[u8]) {
-        let start = self.data.len();
         self.data.extend_from_slice(arg);
-        self.args.push(Arg::Simple(start..self.data.len()));
+        self.args.push(Arg::Simple(self.data.len()));
     }
 
     fn write_arg_fmt(&mut self, arg: impl fmt::Display) {
-        let start = self.data.len();
+        use std::io::Write;
         write!(self.data, "{arg}").unwrap();
-        self.args.push(Arg::Simple(start..self.data.len()));
+        self.args.push(Arg::Simple(self.data.len()));
     }
 
-    fn writer_for_next_arg(&mut self) -> impl Write + '_ {
-        struct CmdBufferedArgGuard<'a>((&'a mut Cmd, usize));
+    fn writer_for_next_arg(&mut self) -> impl std::io::Write + '_ {
+        struct CmdBufferedArgGuard<'a>(&'a mut Cmd);
         impl Drop for CmdBufferedArgGuard<'_> {
             fn drop(&mut self) {
-                self.0
-                     .0
-                    .args
-                    .push(Arg::Simple(self.0 .1..self.0 .0.data.len()));
+                self.0.args.push(Arg::Simple(self.0.data.len()));
             }
         }
-        impl Write for CmdBufferedArgGuard<'_> {
+        impl std::io::Write for CmdBufferedArgGuard<'_> {
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.0 .0.data.extend_from_slice(buf);
+                self.0.data.extend_from_slice(buf);
                 Ok(buf.len())
             }
 
@@ -501,8 +490,7 @@ impl RedisWrite for Cmd {
             }
         }
 
-        let start = self.data.len();
-        CmdBufferedArgGuard((self, start))
+        CmdBufferedArgGuard(self)
     }
 
     fn reserve_space_for_args(&mut self, additional: impl IntoIterator<Item = usize>) {
@@ -519,26 +507,23 @@ impl RedisWrite for Cmd {
     #[cfg(feature = "bytes")]
     fn bufmut_for_next_arg(&mut self, capacity: usize) -> impl bytes::BufMut + '_ {
         self.data.reserve(capacity);
-        struct CmdBufferedArgGuard<'a>((&'a mut Cmd, usize));
+        struct CmdBufferedArgGuard<'a>(&'a mut Cmd);
         impl Drop for CmdBufferedArgGuard<'_> {
             fn drop(&mut self) {
-                self.0
-                     .0
-                    .args
-                    .push(Arg::Simple(self.0 .1..self.0 .0.data.len()));
+                self.0.args.push(Arg::Simple(self.0.data.len()));
             }
         }
         unsafe impl bytes::BufMut for CmdBufferedArgGuard<'_> {
             fn remaining_mut(&self) -> usize {
-                self.0 .0.data.remaining_mut()
+                self.0.data.remaining_mut()
             }
 
             unsafe fn advance_mut(&mut self, cnt: usize) {
-                self.0 .0.data.advance_mut(cnt);
+                self.0.data.advance_mut(cnt);
             }
 
             fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
-                self.0 .0.data.chunk_mut()
+                self.0.data.chunk_mut()
             }
 
             // Vec specializes these methods, so we do too
@@ -546,20 +531,19 @@ impl RedisWrite for Cmd {
             where
                 Self: Sized,
             {
-                self.0 .0.data.put(src);
+                self.0.data.put(src);
             }
 
             fn put_slice(&mut self, src: &[u8]) {
-                self.0 .0.data.put_slice(src);
+                self.0.data.put_slice(src);
             }
 
             fn put_bytes(&mut self, val: u8, cnt: usize) {
-                self.0 .0.data.put_bytes(val, cnt);
+                self.0.data.put_bytes(val, cnt);
             }
         }
 
-        let start = self.data.len();
-        CmdBufferedArgGuard((self, start))
+        CmdBufferedArgGuard(self)
     }
 }
 
@@ -581,12 +565,19 @@ pub(crate) trait ArgsIterator {
 impl ArgsIterator for Cmd {
     /// Returns an iterator over the arguments in this command (including the command name itself)
     fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
-        self.args.iter().map(move |arg| match arg {
-            Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
+        let mut prev = 0;
+        self.args.iter().map(move |arg| match *arg {
+            Arg::Simple(i) => {
+                let arg = Arg::Simple(&self.data[prev..i]);
+                prev = i;
+                arg
+            }
 
             Arg::Cursor => Arg::Cursor,
         })
     }
+
+    // Get a reference to the argument at `idx`
 
     // Get a reference to the argument at `idx`
     #[cfg(any(feature = "cluster", feature = "cache-aio"))]
@@ -595,10 +586,22 @@ impl ArgsIterator for Cmd {
             return None;
         }
 
-        match &self.args[idx] {
-            Arg::Simple(range) => Some(&self.data[range.start..range.end]),
-            _ => None,
+        let start = if idx == 0 {
+            0
+        } else {
+            match self.args[idx - 1] {
+                Arg::Simple(n) => n,
+                _ => 0,
+            }
+        };
+        let end = match self.args[idx] {
+            Arg::Simple(n) => n,
+            _ => 0,
+        };
+        if start == 0 && end == 0 {
+            return None;
         }
+        Some(&self.data[start..end])
     }
 }
 
@@ -976,7 +979,7 @@ pub fn pipe() -> Pipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Cmd;
     #[cfg(feature = "bytes")]
     use bytes::BufMut;
     use rstest::rstest;
@@ -1092,6 +1095,9 @@ mod tests {
             assert_sent_message_equality(&cmd, &freeze.0.data, freeze.0.args.len());
         }
     }
+
+    use crate::RedisWrite;
+    use std::io::Write;
 
     #[test]
     fn test_cmd_clean() {
