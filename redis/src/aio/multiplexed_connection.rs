@@ -1,9 +1,10 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 // #[cfg(feature = "cache-aio")]
 // use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::{cmd_len, FrozenCmd};
+use crate::cmd::{ArgsIterator, FrozenCmd};
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
+use crate::Arg;
 use crate::{
     aio::{check_resp3, setup_connection},
     cmd,
@@ -14,11 +15,10 @@ use ::tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot},
 };
-use futures::SinkExt;
 use futures_util::{
     future::{Future, FutureExt},
     ready,
-    sink::Sink,
+    sink::{Sink, SinkExt},
     stream::{self, Stream, StreamExt},
 };
 use pin_project_lite::pin_project;
@@ -309,22 +309,38 @@ where
             return Err(());
         }
 
-        let mut send_to_sink = |byte_slice| self_.sink_stream.as_mut().start_send(byte_slice);
         let result = match input {
             Input::Separate(cmd) => {
-                let len = cmd_len(cmd)
-                let mut buffer = self_.sink_stream.buffer();
+                let mut buffer = self_.sink_stream.buffer(cmd.len());
+                let mut send_to_sink = |byte_slice| buffer.start_send_unpin(byte_slice);
 
-                for arg in cmd.args_iter() {}
+                let mut itoa_buffer = itoa::Buffer::new();
+                let mut cursor_bytes = itoa::Buffer::new();
+                let byte_slice = itoa_buffer.format(cmd.0.args.len()).as_bytes();
+                send_to_sink(b"*")
+                    .and_then(|_| send_to_sink(byte_slice))
+                    .and_then(|_| send_to_sink(b"\r\n"))
+                    .and_then(|_| {
+                        for arg in cmd.args_iter() {
+                            let bytes = match arg {
+                                Arg::Cursor => cursor_bytes
+                                    .format(cmd.0.cursor.unwrap_or_default())
+                                    .as_bytes(),
+                                Arg::Simple(val) => val,
+                            };
 
-                // let mut buffer = itoa::Buffer::new();
-                // let byte_slice = buffer.format(arg_count).as_bytes();
-                // send_to_sink(b"*")
-                //     .and_then(|_| send_to_sink(byte_slice))
-                //     .and_then(|_| send_to_sink(b"\r\n"))
-                //     .and_then(|_| send_to_sink(&data))
+                            send_to_sink(b"$")?;
+                            let s = itoa_buffer.format(bytes.len());
+                            send_to_sink(s.as_bytes())?;
+                            send_to_sink(b"\r\n")?;
+
+                            send_to_sink(bytes)?;
+                            send_to_sink(b"\r\n")?;
+                        }
+                        Ok(())
+                    })
             }
-            Input::Full(full_command) => self_.sink_stream.as_mut().start_send((&full_command)),
+            Input::Full(full_command) => self_.sink_stream.as_mut().start_send(&full_command),
         };
         match result {
             Ok(()) => {

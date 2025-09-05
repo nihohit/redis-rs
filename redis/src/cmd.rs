@@ -97,7 +97,7 @@ pub(crate) struct FrozenRepr {
     pub(crate) data: bytes::Bytes,
     // Arg::Simple contains the range for each argument
     pub(crate) args: std::sync::Arc<[Arg<usize>]>,
-    cursor: Option<u64>,
+    pub(crate) cursor: Option<u64>,
     // #[cfg(feature = "cache-aio")]
     // cache: Option<CommandCacheConfig>,
 }
