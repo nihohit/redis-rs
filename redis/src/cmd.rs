@@ -78,7 +78,7 @@ impl Default for CommandCacheConfig {
 pub struct Cmd {
     data: Vec<u8>,
     // Arg::Simple contains the range for each argument
-    args: Vec<Arg<Range<usize>>>,
+    args: Vec<Arg<usize>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
@@ -96,7 +96,8 @@ pub struct FrozenCmd(pub(crate) FrozenRepr);
 pub(crate) struct FrozenRepr {
     pub(crate) data: bytes::Bytes,
     // Arg::Simple contains the range for each argument
-    pub(crate) args: std::sync::Arc<[Arg<Range<usize>>]>,
+    pub(crate) args: std::sync::Arc<[Arg<usize>]>,
+    cursor: Option<u64>,
     // #[cfg(feature = "cache-aio")]
     // cache: Option<CommandCacheConfig>,
 }
@@ -109,6 +110,10 @@ impl FrozenCmd {
         write_command_to_vec(&mut cmd, self.args_iter(), 0);
         cmd
     }
+
+    pub(crate) fn len(&self) -> usize {
+        args_len(self.args_iter(), 0)
+    }
 }
 
 #[cfg(feature = "aio")]
@@ -118,6 +123,7 @@ impl Cmd {
         let repr = FrozenRepr {
             data: self.data.into(),
             args: std::sync::Arc::from(self.args),
+            cursor: self.cursor,
         };
 
         FrozenCmd(repr)

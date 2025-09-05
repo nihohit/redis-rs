@@ -1,7 +1,7 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
 // #[cfg(feature = "cache-aio")]
 // use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::FrozenCmd;
+use crate::cmd::{cmd_len, FrozenCmd};
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
@@ -14,7 +14,7 @@ use ::tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot},
 };
-use bytes::Bytes;
+use futures::SinkExt;
 use futures_util::{
     future::{Future, FutureExt},
     ready,
@@ -67,7 +67,7 @@ impl ResponseAggregate {
 }
 
 enum Input {
-    Separate xc c ,
+    Separate(FrozenCmd),
     Full(Vec<u8>),
 }
 
@@ -311,15 +311,20 @@ where
 
         let mut send_to_sink = |byte_slice| self_.sink_stream.as_mut().start_send(byte_slice);
         let result = match input {
-            Input::Separate { arg_count, data } => {
-                let mut buffer = itoa::Buffer::new();
-                let byte_slice = buffer.format(arg_count).as_bytes();
-                send_to_sink(b"*")
-                    .and_then(|_| send_to_sink(byte_slice))
-                    .and_then(|_| send_to_sink(b"\r\n"))
-                    .and_then(|_| send_to_sink(&data))
+            Input::Separate(cmd) => {
+                let len = cmd_len(cmd)
+                let mut buffer = self_.sink_stream.buffer();
+
+                for arg in cmd.args_iter() {}
+
+                // let mut buffer = itoa::Buffer::new();
+                // let byte_slice = buffer.format(arg_count).as_bytes();
+                // send_to_sink(b"*")
+                //     .and_then(|_| send_to_sink(byte_slice))
+                //     .and_then(|_| send_to_sink(b"\r\n"))
+                //     .and_then(|_| send_to_sink(&data))
             }
-            Input::Full(full_command) => send_to_sink(&full_command),
+            Input::Full(full_command) => self_.sink_stream.as_mut().start_send((&full_command)),
         };
         match result {
             Ok(()) => {
@@ -599,14 +604,7 @@ impl MultiplexedConnection {
         //     }
         // }
         self.pipeline
-            .send_recv(
-                Input::Separate {
-                    arg_count: cmd.0.args.len(),
-                    data: cmd.0.data,
-                },
-                None,
-                self.response_timeout,
-            )
+            .send_recv(Input::Separate(cmd), None, self.response_timeout)
             .await
     }
 
