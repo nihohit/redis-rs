@@ -145,11 +145,7 @@ fn bench_multiplexed_async_implicit_pipeline(tuple: AsyncDependencies) {
     let (_ctx, runtime, con) = tuple;
 
     let cmds: Vec<_> = (0..PIPELINE_QUERIES)
-        .map(|i| {
-            let mut cmd = redis::cmd("SET");
-            cmd.arg(format!("foo{i}")).arg(i);
-            cmd
-        })
+        .map(|i| redis::cmd("SET").arg(format!("foo{i}")).arg(i))
         .collect();
 
     let mut connections = (0..PIPELINE_QUERIES)
@@ -158,7 +154,7 @@ fn bench_multiplexed_async_implicit_pipeline(tuple: AsyncDependencies) {
 
     runtime
         .block_on(async {
-            cmds.iter()
+            cmds.into_iter()
                 .zip(&mut connections)
                 .map(|(cmd, con)| cmd.exec_async(con))
                 .collect::<stream::FuturesUnordered<_>>()
@@ -171,9 +167,8 @@ fn bench_multiplexed_async_implicit_pipeline(tuple: AsyncDependencies) {
 #[library_benchmark]
 #[bench::with_setup(setup = allocate_a_lot)]
 fn bench_encode_small(_: ()) {
-    let mut cmd = redis::cmd("HSETX");
-
-    cmd.arg("ABC:1237897325302:878241asdyuxpioaswehqwu")
+    let cmd = redis::cmd("HSETX")
+        .arg("ABC:1237897325302:878241asdyuxpioaswehqwu")
         .arg("some hash key")
         .arg(124757920);
 

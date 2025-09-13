@@ -15,7 +15,7 @@ use crate::types::{from_owned_redis_value, FromRedisValue, RedisResult, RedisWri
 use crate::{connection::ConnectionLike, ParsingError};
 
 /// An argument to a redis command
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Arg<D> {
     /// A normal argument
     Simple(D),
@@ -33,7 +33,7 @@ pub enum Arg<D> {
 /// let config = CommandCacheConfig::new()
 ///     .set_enable_cache(true)
 ///     .set_client_side_ttl(ttl);
-/// let command = Cmd::new().arg("GET").arg("key").set_cache_config(config);
+/// let command = redis::cmd("GET").arg("key").set_cache_config(config);
 /// ```
 #[cfg(feature = "cache-aio")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
@@ -76,9 +76,9 @@ impl Default for CommandCacheConfig {
 /// Represents redis commands.
 #[derive(Clone)]
 pub struct Cmd {
-    pub(crate) data: Vec<u8>,
+    data: Vec<u8>,
     // Arg::Simple contains the range for each argument
-    pub(crate) args: Vec<Arg<Range<usize>>>,
+    args: Vec<Arg<Range<usize>>>,
     cursor: Option<u64>,
     // If it's true command's response won't be read from socket. Useful for Pub/Sub.
     no_response: bool,
@@ -88,10 +88,134 @@ pub struct Cmd {
     cache: Option<CommandCacheConfig>,
 }
 
+/// asdasd
+#[cfg(feature = "aio")]
+#[derive(Clone)]
+pub struct FrozenCmd(pub(crate) FrozenRepr);
+
+#[cfg(feature = "aio")]
+#[derive(Clone)]
+pub(crate) enum FrozenRepr {
+    FullyPackaged {
+        data: bytes::Bytes,
+        // Arg::Simple contains the range for each argument
+        args: std::sync::Arc<[Arg<Range<usize>>]>,
+        // #[cfg(feature = "cache-aio")]
+        // cache: Option<CommandCacheConfig>,
+    },
+    Copy(std::sync::Arc<Cmd>),
+}
+
+#[cfg(feature = "aio")]
+impl FrozenCmd {
+    /// asdasda TODO - check if this function is actually needed, and whether it should be pub.
+    pub fn get_packed_command(&self) -> Vec<u8> {
+        match &self.0 {
+            FrozenRepr::FullyPackaged { data, args } => {
+                let mut vec = arg_count_vec(args.len());
+                vec.extend_from_slice(data);
+                vec
+            }
+            FrozenRepr::Copy(cmd) => cmd.get_packed_command(),
+        }
+    }
+}
+
+#[cfg(feature = "aio")]
+impl Cmd {
+    /// asdasdasd
+    pub fn freeze(self) -> FrozenCmd {
+        let repr = if self.data_is_complete() {
+            FrozenRepr::FullyPackaged {
+                data: self.data.into(),
+                args: std::sync::Arc::from(self.args),
+            }
+        } else {
+            FrozenRepr::Copy(std::sync::Arc::new(self))
+        };
+        FrozenCmd(repr)
+    }
+}
+
+#[cfg(feature = "aio")]
+impl ArgsIterator for FrozenCmd {
+    /// Returns an iterator over the arguments in this command (including the command name itself)
+    fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
+        #[derive(Clone)]
+        struct ArgsIterator<'a> {
+            cmd: &'a FrozenCmd,
+            index: usize,
+        }
+
+        impl<'a> ExactSizeIterator for ArgsIterator<'a> {
+            fn len(&self) -> usize {
+                match &self.cmd.0 {
+                    FrozenRepr::FullyPackaged { args, .. } => args.len(),
+                    FrozenRepr::Copy(cmd) => cmd.args.len(),
+                }
+            }
+        }
+
+        impl<'a> Iterator for ArgsIterator<'a> {
+            fn next(&mut self) -> Option<Self::Item> {
+                let result = match &self.cmd.0 {
+                    FrozenRepr::FullyPackaged { data, args } => {
+                        args.get(self.index).map(|arg| match arg {
+                            Arg::Simple(range) => Arg::Simple(&data[range.start..range.end]),
+                            Arg::Cursor => Arg::Cursor,
+                        })
+                    }
+                    FrozenRepr::Copy(cmd) => cmd.args.get(self.index).map(|arg| match arg {
+                        Arg::Simple(range) => Arg::Simple(&cmd.data[range.start..range.end]),
+                        Arg::Cursor => Arg::Cursor,
+                    }),
+                };
+                if result.is_some() {
+                    self.index += 1;
+                };
+                result
+            }
+
+            type Item = Arg<&'a [u8]>;
+        }
+        ArgsIterator {
+            cmd: self,
+            index: 0,
+        }
+    }
+
+    // Get a reference to the argument at `idx`
+    #[cfg(any(feature = "cluster", feature = "cache-aio"))]
+    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+        match &self.0 {
+            FrozenRepr::FullyPackaged { data, args } => {
+                if idx >= args.len() {
+                    return None;
+                }
+
+                match &args[idx] {
+                    Arg::Simple(range) => Some(&data[range.start..range.end]),
+                    _ => None,
+                }
+            }
+            FrozenRepr::Copy(cmd) => cmd.arg_idx(idx),
+        }
+    }
+}
+
+// #[cfg(feature = "aio")]
+// #[cfg(feature = "cache-aio")]
+// impl Cacheable for FrozenCmd {
+//     fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
+//         &self.cache
+//     }
+// }
+
 /// Represents a redis iterator.
 pub struct Iter<'a, T: FromRedisValue> {
     iter: CheckedIter<'a, T>,
 }
+
 impl<T: FromRedisValue> Iterator for Iter<'_, T> {
     type Item = RedisResult<T>;
 
@@ -184,7 +308,7 @@ impl<'a, T: FromRedisValue + 'a> AsyncIterInner<'a, T> {
 
             let (cursor, batch) = match self
                 .con
-                .req_packed_command(self.cmd.clone())
+                .req_packed_command(self.cmd.clone().freeze())
                 .await
                 .and_then(|val| Ok(from_owned_redis_value::<(u64, _)>(val)?))
             {
@@ -507,6 +631,51 @@ impl Default for Cmd {
     }
 }
 
+pub(crate) trait ArgsIterator {
+    /// Returns an iterator over the arguments in this command (including the command name itself)
+    fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>>;
+
+    // Get a reference to the argument at `idx`
+    #[cfg(any(feature = "cluster", feature = "cache-aio"))]
+    fn arg_idx(&self, idx: usize) -> Option<&[u8]>;
+}
+
+impl ArgsIterator for Cmd {
+    /// Returns an iterator over the arguments in this command (including the command name itself)
+    fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
+        self.args.iter().map(move |arg| match arg {
+            Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
+
+            Arg::Cursor => Arg::Cursor,
+        })
+    }
+
+    // Get a reference to the argument at `idx`
+    #[cfg(any(feature = "cluster", feature = "cache-aio"))]
+    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+        if idx >= self.args.len() {
+            return None;
+        }
+
+        match &self.args[idx] {
+            Arg::Simple(range) => Some(&self.data[range.start..range.end]),
+            _ => None,
+        }
+    }
+}
+
+// #[cfg(feature = "cache-aio")]
+// pub(crate) trait Cacheable: ArgsIterator {
+//     fn get_cache_config(&self) -> &Option<CommandCacheConfig>;
+// }
+
+// #[cfg(feature = "cache-aio")]
+// impl Cacheable for Cmd {
+//     fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
+//         &self.cache
+//     }
+// }
+
 /// A command acts as a builder interface to creating encoded redis
 /// requests.  This allows you to easily assemble a packed command
 /// by chaining arguments together.
@@ -514,7 +683,7 @@ impl Default for Cmd {
 /// Basic example:
 ///
 /// ```rust
-/// redis::Cmd::new().arg("SET").arg("my_key").arg(42);
+/// redis::cmd("SET").arg("my_key").arg(42);
 /// ```
 ///
 /// There is also a helper function called `cmd` which makes it a
@@ -618,6 +787,12 @@ impl Cmd {
         self
     }
 
+    #[inline]
+    pub(crate) fn arg_mut<T: ToRedisArgs>(&mut self, arg: T) -> &mut Self {
+        arg.write_redis_args(self);
+        self
+    }
+
     /// Works similar to `arg` but adds a cursor argument.
     ///
     /// This is always an integer and also flips the command implementation to support a
@@ -711,7 +886,7 @@ impl Cmd {
         self,
         con: &mut impl crate::aio::ConnectionLike,
     ) -> RedisResult<T> {
-        let val = con.req_packed_command(self).await?;
+        let val = con.req_packed_command(self.freeze()).await?;
         Ok(from_owned_redis_value(val.extract_error()?)?)
     }
 
@@ -786,7 +961,7 @@ impl Cmd {
         mut self,
         con: &'a mut (dyn AsyncConnection + Send),
     ) -> RedisResult<AsyncIter<'a, T>> {
-        let rv = con.req_packed_command(self.clone()).await?;
+        let rv = con.req_packed_command(self.clone().freeze()).await?;
 
         let batch = self.set_cursor_and_get_batch(rv)?;
 
@@ -817,28 +992,6 @@ impl Cmd {
         self.query_async::<()>(con).await
     }
 
-    /// Returns an iterator over the arguments in this command (including the command name itself)
-    pub fn args_iter(&self) -> impl Clone + ExactSizeIterator<Item = Arg<&[u8]>> {
-        self.args.iter().map(move |arg| match arg {
-            Arg::Simple(range) => Arg::Simple(&self.data[range.start..range.end]),
-
-            Arg::Cursor => Arg::Cursor,
-        })
-    }
-
-    // Get a reference to the argument at `idx`
-    #[cfg(any(feature = "cluster", feature = "cache-aio"))]
-    pub(crate) fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
-        if idx >= self.args.len() {
-            return None;
-        }
-
-        match &self.args[idx] {
-            Arg::Simple(range) => Some(&self.data[range.start..range.end]),
-            _ => None,
-        }
-    }
-
     /// Client won't read and wait for results. Currently only used for Pub/Sub commands in RESP3.
     #[inline]
     pub fn set_no_response(&mut self, nr: bool) -> &mut Cmd {
@@ -855,15 +1008,9 @@ impl Cmd {
     /// Changes caching behaviour for this specific command.
     #[cfg(feature = "cache-aio")]
     #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-    pub fn set_cache_config(&mut self, command_cache_config: CommandCacheConfig) -> &mut Cmd {
+    pub fn set_cache_config(mut self, command_cache_config: CommandCacheConfig) -> Cmd {
         self.cache = Some(command_cache_config);
         self
-    }
-
-    #[cfg(feature = "cache-aio")]
-    #[inline]
-    pub(crate) fn get_cache_config(&self) -> &Option<CommandCacheConfig> {
-        &self.cache
     }
 }
 
@@ -908,6 +1055,13 @@ pub fn pipe() -> Pipeline {
     Pipeline::new()
 }
 
+#[cfg(feature = "aio")]
+pub(crate) fn arg_count_vec(arg_count: usize) -> Vec<u8> {
+    let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
+    crate::cmd::write_count(&mut vec, arg_count).unwrap();
+    vec
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -915,13 +1069,77 @@ mod tests {
     use bytes::BufMut;
     use rstest::rstest;
 
+    fn args_iter_to_str(iter: &impl ArgsIterator) -> Vec<String> {
+        iter.args_iter()
+            .map(|arg| match arg {
+                Arg::Simple(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+                Arg::Cursor => "CURSOR".to_string(),
+            })
+            .collect()
+    }
+
+    fn assert_arg_equality(c1: &impl ArgsIterator, c2: &impl ArgsIterator) {
+        let v1: Vec<_> = c1.args_iter().collect::<Vec<_>>();
+        let v2: Vec<_> = c2.args_iter().collect::<Vec<_>>();
+        assert_eq!(
+            v1,
+            v2,
+            "{:?} - {:?}",
+            args_iter_to_str(c1),
+            args_iter_to_str(c2)
+        );
+    }
+
+    #[cfg(feature = "aio")]
+    fn assert_args_iter_does_not_change(cmd: &Cmd) {
+        let clone = cmd.clone();
+        let prev_iter = clone.args_iter().collect::<Vec<_>>();
+        let freeze = cmd.clone().freeze();
+        let next_iter = freeze.args_iter().collect::<Vec<_>>();
+        assert_eq!(
+            prev_iter,
+            next_iter,
+            "{:?} - {:?}",
+            args_iter_to_str(&clone),
+            args_iter_to_str(&freeze)
+        );
+    }
+
+    #[cfg(feature = "bytes")]
+    fn assert_sent_message_equality(cmd: &Cmd, bytes: &bytes::Bytes, arg_count: usize) {
+        let mut vec = arg_count_vec(arg_count);
+        vec.extend_from_slice(bytes);
+        assert_eq!(vec, cmd.get_packed_command());
+    }
+
+    fn assert_practical_equivalent(c1: Cmd, c2: Cmd) {
+        assert_eq!(c1.get_packed_command(), c2.get_packed_command());
+        assert_arg_equality(&c1, &c2);
+        #[cfg(feature = "bytes")]
+        {
+            assert_args_iter_does_not_change(&c1);
+            assert_args_iter_does_not_change(&c2);
+            let c1 = c1.freeze();
+            let c2 = c2.freeze();
+            assert_arg_equality(&c1, &c2);
+            match (&c1.0, &c2.0) {
+                (FrozenRepr::FullyPackaged { data, args }, FrozenRepr::Copy(cmd)) => {
+                    assert_sent_message_equality(cmd, data, args.len());
+                }
+                (FrozenRepr::Copy(cmd), FrozenRepr::FullyPackaged { data, args }) => {
+                    assert_sent_message_equality(cmd, data, args.len());
+                }
+                _ => {}
+            }
+        }
+    }
+
     #[rstest]
     fn test_cmd_packed_command_simple_args(#[values(false, true)] give_size: bool) {
-        let mut cmd = Cmd::new();
         let args: &[&[u8]] = &[b"phone", b"barz"];
-        cmd.arg("key")
-            .write_arg_fmt("value", give_size.then_some(5));
-        cmd.arg(42).arg(args);
+        let mut cmd = cmd("key");
+        cmd.write_arg_fmt("value", give_size.then_some(5));
+        cmd = cmd.arg(42).arg(args);
 
         let packed_command = cmd.get_packed_command();
         assert_eq!(cmd_len(&cmd), packed_command.len());
@@ -931,17 +1149,23 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
+        let args_vec: Vec<&[u8]> = vec![b"key", b"value", b"42", b"phone", b"barz"];
+        let args_vec: Vec<_> = args_vec.into_iter().map(Arg::Simple).collect();
+        assert_eq!(cmd.args_iter().collect::<Vec<_>>(), args_vec);
+        #[cfg(feature = "aio")]
+        {
+            assert_args_iter_does_not_change(&cmd);
+            let freeze = cmd.clone().freeze();
+            if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
+                assert_sent_message_equality(&cmd, &data, args.len());
+            };
+        }
     }
 
     #[test]
     fn test_cmd_packed_command_with_cursor() {
-        let mut cmd = Cmd::new();
         let args: &[&[u8]] = &[b"phone", b"barz"];
-        cmd.arg("key")
-            .arg("value")
-            .arg(42)
-            .arg(args)
-            .cursor_arg(512);
+        let cmd = cmd("key").arg("value").arg(42).arg(args).cursor_arg(512);
 
         let packed_command = cmd.get_packed_command();
         assert_eq!(cmd_len(&cmd), packed_command.len());
@@ -951,14 +1175,27 @@ mod tests {
             "{}",
             String::from_utf8(packed_command.clone()).unwrap()
         );
+        let args_vec: Vec<&[u8]> = vec![b"key", b"value", b"42", b"phone", b"barz"];
+        let args_vec: Vec<_> = args_vec
+            .into_iter()
+            .map(Arg::Simple)
+            .chain(std::iter::once(Arg::Cursor))
+            .collect();
+        assert_eq!(cmd.args_iter().collect::<Vec<_>>(), args_vec);
+        #[cfg(feature = "aio")]
+        {
+            assert_args_iter_does_not_change(&cmd);
+            let freeze = cmd.clone().freeze();
+            if let FrozenRepr::FullyPackaged { data, args } = freeze.0 {
+                assert_sent_message_equality(&cmd, &data, args.len());
+            };
+        }
     }
 
     #[test]
     fn test_cmd_clean() {
-        let mut cmd = Cmd::new();
-        cmd.arg("key").arg("value");
+        let mut cmd = cmd("key").arg("value").cursor_arg(24);
         cmd.set_no_response(true);
-        cmd.cursor_arg(24);
         cmd.clear();
 
         // Everything should be reset, but the capacity should still be there
@@ -969,27 +1206,28 @@ mod tests {
         assert_eq!(cmd.cursor, None);
         assert!(!cmd.no_response);
         assert!(!cmd.buffering);
+        assert_practical_equivalent(cmd, Cmd::new());
     }
 
-    #[test]
-    #[cfg(feature = "cache-aio")]
-    fn test_cmd_clean_cache_aio() {
-        let mut cmd = Cmd::new();
-        cmd.arg("key").arg("value");
-        cmd.set_no_response(true);
-        cmd.cursor_arg(24);
-        cmd.set_cache_config(crate::CommandCacheConfig::default());
-        cmd.clear();
+    // #[test]
+    // #[cfg(feature = "cache-aio")]
+    // fn test_cmd_clean_cache_aio() {
+    //     let mut cmd = cmd("key")
+    //         .arg("value")
+    //         .cursor_arg(24)
+    //         .set_cache_config(crate::CommandCacheConfig::default());
+    //     cmd.set_no_response(true);
+    //     cmd.clear();
 
-        // Everything should be reset, but the capacity should still be there
-        assert!(cmd.data.is_empty());
-        assert!(cmd.data.capacity() > 0);
-        assert!(cmd.args.is_empty());
-        assert!(cmd.args.capacity() > 0);
-        assert_eq!(cmd.cursor, None);
-        assert!(!cmd.no_response);
-        assert!(cmd.cache.is_none());
-    }
+    //     // Everything should be reset, but the capacity should still be there
+    //     assert!(cmd.data.is_empty());
+    //     assert!(cmd.data.capacity() > 0);
+    //     assert!(cmd.args.is_empty());
+    //     assert!(cmd.args.capacity() > 0);
+    //     assert_eq!(cmd.cursor, None);
+    //     assert!(!cmd.no_response);
+    //     assert!(cmd.cache.is_none());
+    // }
 
     #[rstest]
     fn test_cmd_writer_for_next_arg(#[values(false, true)] give_size: bool) {
@@ -1002,13 +1240,11 @@ mod tests {
             c1_writer.write_all(b"bar").unwrap();
             c1_writer.flush().unwrap();
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     // Test that multiple writers to the same command produce the same
@@ -1028,14 +1264,12 @@ mod tests {
             c1_writer.write_all(b"qux").unwrap();
             c1_writer.flush().unwrap();
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
         c2.write_arg(b"bazqux");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     // Test that an "empty" write produces the equivalent to `write_arg(b"")`
@@ -1046,13 +1280,11 @@ mod tests {
             let mut c1_writer = c1.writer_for_next_arg(give_size.then_some(0));
             c1_writer.flush().unwrap();
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[cfg(feature = "bytes")]
@@ -1066,13 +1298,11 @@ mod tests {
             c1_writer.put_slice(b"foo");
             c1_writer.put_slice(b"bar");
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[cfg(feature = "bytes")]
@@ -1091,14 +1321,12 @@ mod tests {
             c1_writer.put_slice(b"baz");
             c1_writer.put_slice(b"qux");
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"foobar");
         c2.write_arg(b"bazqux");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[cfg(feature = "bytes")]
@@ -1109,13 +1337,11 @@ mod tests {
         {
             let _c1_writer = c1.bufmut_for_next_arg(0, give_size);
         }
-        let v1 = c1.get_packed_command();
 
         let mut c2 = Cmd::new();
         c2.write_arg(b"");
-        let v2 = c2.get_packed_command();
 
-        assert_eq!(v1, v2);
+        assert_practical_equivalent(c1, c2);
     }
 
     #[test]
@@ -1124,11 +1350,11 @@ mod tests {
         let mut c = Cmd::new();
         assert_eq!(c.arg_idx(0), None);
 
-        c.arg("SET");
+        c = c.arg("SET");
         assert_eq!(c.arg_idx(0), Some(&b"SET"[..]));
         assert_eq!(c.arg_idx(1), None);
 
-        c.arg("foo").arg("42");
+        c = c.arg("foo").arg("42");
         assert_eq!(c.arg_idx(1), Some(&b"foo"[..]));
         assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
         assert_eq!(c.arg_idx(3), None);

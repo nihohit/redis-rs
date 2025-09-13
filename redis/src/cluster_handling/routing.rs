@@ -2,7 +2,7 @@ use arcstr::ArcStr;
 use rand::Rng;
 
 use crate::cluster_handling::slot_map::SLOT_SIZE;
-use crate::cmd::{Arg, Cmd};
+use crate::cmd::{Arg, ArgsIterator, Cmd};
 use crate::commands::is_readonly_cmd;
 use crate::types::Value;
 use crate::{ErrorKind, RedisError, RedisResult};
@@ -131,9 +131,9 @@ where
 {
     let mut new_cmd = Cmd::new();
     let command_length = 1; // TODO - the +1 should change if we have multi-slot commands with 2 command words.
-    new_cmd.arg(original_cmd.arg_idx(0));
+    new_cmd.arg_mut(original_cmd.arg_at(0));
     for index in indices {
-        new_cmd.arg(original_cmd.arg_idx(index + command_length));
+        new_cmd.arg_mut(original_cmd.arg_at(index + command_length));
     }
     new_cmd
 }
@@ -499,11 +499,11 @@ where
     let incr_add_next_arg = |arg_indices: &mut Vec<usize>, mut curr_arg_idx: usize| {
         curr_arg_idx += 1;
         // Ensure there's a value following the key
-        routable.arg_idx(curr_arg_idx)?;
+        routable.arg_at(curr_arg_idx)?;
         arg_indices.push(curr_arg_idx);
         Some(curr_arg_idx)
     };
-    while let Some(arg) = routable.arg_idx(first_key_index + curr_arg_idx) {
+    while let Some(arg) = routable.arg_at(first_key_index + curr_arg_idx) {
         let route = get_route(is_readonly, arg);
         let arg_indices = routes.entry(route).or_insert(Vec::new());
 
@@ -518,7 +518,7 @@ where
             MultiSlotArgPattern::KeysAndLastArg => {
                 // Check if the command has more keys or if the next argument is a path
                 if routable
-                    .arg_idx(first_key_index + curr_arg_idx + 2)
+                    .arg_at(first_key_index + curr_arg_idx + 2)
                     .is_none()
                 {
                     // Last key reached; add the path argument index for each route and break
@@ -801,38 +801,38 @@ impl RoutingInfo {
 
             RouteBy::ThirdArgAfterKeyCount => {
                 let key_count = r
-                    .arg_idx(2)
+                    .arg_at(2)
                     .and_then(|x| std::str::from_utf8(x).ok())
                     .and_then(|x| x.parse::<u64>().ok())?;
                 if key_count == 0 {
                     Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
                 } else {
-                    r.arg_idx(3).map(|key| RoutingInfo::for_key(cmd, key))
+                    r.arg_at(3).map(|key| RoutingInfo::for_key(cmd, key))
                 }
             }
 
-            RouteBy::SecondArg => r.arg_idx(2).map(|key| RoutingInfo::for_key(cmd, key)),
+            RouteBy::SecondArg => r.arg_at(2).map(|key| RoutingInfo::for_key(cmd, key)),
 
             RouteBy::SecondArgAfterKeyCount => {
                 let key_count = r
-                    .arg_idx(1)
+                    .arg_at(1)
                     .and_then(|x| std::str::from_utf8(x).ok())
                     .and_then(|x| x.parse::<u64>().ok())?;
                 if key_count == 0 {
                     Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
                 } else {
-                    r.arg_idx(2).map(|key| RoutingInfo::for_key(cmd, key))
+                    r.arg_at(2).map(|key| RoutingInfo::for_key(cmd, key))
                 }
             }
 
             RouteBy::StreamsIndex => {
                 let streams_position = r.position(b"STREAMS")?;
-                r.arg_idx(streams_position + 1)
+                r.arg_at(streams_position + 1)
                     .map(|key| RoutingInfo::for_key(cmd, key))
             }
 
             RouteBy::SecondArgSlot => r
-                .arg_idx(2)
+                .arg_at(2)
                 .and_then(|arg| std::str::from_utf8(arg).ok())
                 .and_then(|slot| slot.parse::<u16>().ok())
                 .map(|slot| {
@@ -842,7 +842,7 @@ impl RoutingInfo {
                     )))
                 }),
 
-            RouteBy::FirstKey => match r.arg_idx(1) {
+            RouteBy::FirstKey => match r.arg_at(1) {
                 Some(key) => Some(RoutingInfo::for_key(cmd, key)),
                 None => Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random)),
             },
@@ -864,7 +864,7 @@ pub(crate) trait Routable {
     /// Convenience function to return ascii uppercase version of the
     /// the first argument (i.e., the command).
     fn command(&self) -> Option<Vec<u8>> {
-        let primary_command = self.arg_idx(0).map(|x| x.to_ascii_uppercase())?;
+        let primary_command = self.arg_at(0).map(|x| x.to_ascii_uppercase())?;
         let mut primary_command = match primary_command.as_slice() {
             b"XGROUP" | b"OBJECT" | b"SLOWLOG" | b"FUNCTION" | b"MODULE" | b"COMMAND"
             | b"PUBSUB" | b"CONFIG" | b"MEMORY" | b"XINFO" | b"CLIENT" | b"ACL" | b"SCRIPT"
@@ -874,7 +874,7 @@ pub(crate) trait Routable {
             }
         };
 
-        Some(match self.arg_idx(1) {
+        Some(match self.arg_at(1) {
             Some(secondary_command) => {
                 let previous_len = primary_command.len();
                 primary_command.reserve(secondary_command.len() + 1);
@@ -889,14 +889,17 @@ pub(crate) trait Routable {
     }
 
     /// Returns a reference to the data for the argument at `idx`.
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]>;
+    fn arg_at(&self, idx: usize) -> Option<&[u8]>;
 
     /// Returns index of argument that matches `candidate`, if it exists
     fn position(&self, candidate: &[u8]) -> Option<usize>;
 }
 
-impl Routable for Cmd {
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+impl<T> Routable for T
+where
+    T: ArgsIterator,
+{
+    fn arg_at(&self, idx: usize) -> Option<&[u8]> {
         self.arg_idx(idx)
     }
 
@@ -909,7 +912,7 @@ impl Routable for Cmd {
 }
 
 impl Routable for Value {
-    fn arg_idx(&self, idx: usize) -> Option<&[u8]> {
+    fn arg_at(&self, idx: usize) -> Option<&[u8]> {
         match self {
             Value::Array(args) => match args.get(idx) {
                 Some(Value::BulkString(ref data)) => Some(&data[..]),
@@ -1012,24 +1015,22 @@ mod tests_routing {
         ResponsePolicy, Route, RoutingInfo, SingleNodeRoutingInfo, SlotAddr,
     };
     use crate::cluster_routing::slot;
+    use crate::cmd::ArgsIterator;
     use crate::{cmd, parser::parse_redis_value, Value};
     use core::panic;
 
     #[test]
     fn test_routing_info_mixed_capatalization() {
-        let mut upper = cmd("XREAD");
-        upper.arg("STREAMS").arg("foo").arg(0);
+        let upper = cmd("XREAD").arg("STREAMS").arg("foo").arg(0);
 
-        let mut lower = cmd("xread");
-        lower.arg("streams").arg("foo").arg(0);
+        let lower = cmd("xread").arg("streams").arg("foo").arg(0);
 
         assert_eq!(
             RoutingInfo::for_routable(&upper).unwrap(),
             RoutingInfo::for_routable(&lower).unwrap()
         );
 
-        let mut mixed = cmd("xReAd");
-        mixed.arg("StReAmS").arg("foo").arg(0);
+        let mixed = cmd("xReAd").arg("StReAmS").arg("foo").arg(0);
 
         assert_eq!(
             RoutingInfo::for_routable(&lower).unwrap(),
@@ -1042,44 +1043,36 @@ mod tests_routing {
         let mut test_cmds = vec![];
 
         // RoutingInfo::AllMasters
-        let mut test_cmd = cmd("FLUSHALL");
-        test_cmd.arg("");
-        test_cmds.push(test_cmd);
+        let mut test_cmd = cmd("FLUSHALL").arg("");
+        test_cmds.push(test_cmd.clone());
 
         // RoutingInfo::AllNodes
-        test_cmd = cmd("ECHO");
-        test_cmd.arg("");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("ECHO").arg("");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 2nd arg ("42")
-        test_cmd = cmd("SET");
-        test_cmd.arg("42");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("SET").arg("42");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 3rd arg ("FOOBAR")
-        test_cmd = cmd("XINFO");
-        test_cmd.arg("GROUPS").arg("FOOBAR");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("XINFO").arg("GROUPS").arg("FOOBAR");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 3rd or 4th arg (3rd = "0" == RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
-        test_cmd = cmd("EVAL");
-        test_cmd.arg("FOO").arg("0").arg("BAR");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("EVAL").arg("FOO").arg("0").arg("BAR");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key is 3rd or 4th arg (3rd != "0" == RoutingInfo::Slot)
-        test_cmd = cmd("EVAL");
-        test_cmd.arg("FOO").arg("4").arg("BAR");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("EVAL").arg("FOO").arg("4").arg("BAR");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key position is variable, 3rd arg
-        test_cmd = cmd("XREAD");
-        test_cmd.arg("STREAMS").arg("4");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("XREAD").arg("STREAMS").arg("4");
+        test_cmds.push(test_cmd.clone());
 
         // Routing key position is variable, 4th arg
-        test_cmd = cmd("XREAD");
-        test_cmd.arg("FOO").arg("STREAMS").arg("4");
-        test_cmds.push(test_cmd);
+        test_cmd = cmd("XREAD").arg("FOO").arg("STREAMS").arg("4");
+        test_cmds.push(test_cmd.clone());
 
         for cmd in test_cmds {
             let value = parse_redis_value(&cmd.get_packed_command()).unwrap();
@@ -1152,14 +1145,14 @@ mod tests_routing {
             cmd("EVALSHA").arg(r#"redis.call("PING");"#).arg(0),
         ] {
             assert_eq!(
-                RoutingInfo::for_routable(cmd),
+                RoutingInfo::for_routable(&cmd),
                 Some(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
             );
         }
 
         // While FCALL with N keys is expected to be routed to a specific node
         assert_eq!(
-            RoutingInfo::for_routable(cmd("FCALL").arg("foo").arg(1).arg("mykey")),
+            RoutingInfo::for_routable(&cmd("FCALL").arg("foo").arg(1).arg("mykey")),
             Some(RoutingInfo::SingleNode(
                 SingleNodeRoutingInfo::SpecificNode(Route::new(slot(b"mykey"), SlotAddr::Master))
             ))
@@ -1230,7 +1223,7 @@ mod tests_routing {
             ),
         ] {
             assert_eq!(
-                RoutingInfo::for_routable(cmd),
+                RoutingInfo::for_routable(&cmd),
                 expected,
                 "{}",
                 std::str::from_utf8(cmd.arg_idx(0).unwrap()).unwrap()
@@ -1262,8 +1255,7 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_keys_only() {
-        let mut cmd = cmd("DEL");
-        cmd.arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
+        let cmd = cmd("DEL").arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
         let routing = RoutingInfo::for_routable(&cmd);
         let mut expected = std::collections::HashMap::new();
         expected.insert(Route(4813, SlotAddr::Master), vec![2]);
@@ -1278,8 +1270,11 @@ mod tests_routing {
             "expected={expected:?}\nrouting={routing:?}"
         );
 
-        let mut cmd = crate::cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
+        let cmd = crate::cmd("MGET")
+            .arg("foo")
+            .arg("bar")
+            .arg("baz")
+            .arg("{bar}vaz");
         let routing = RoutingInfo::for_routable(&cmd);
         let mut expected = std::collections::HashMap::new();
         expected.insert(Route(4813, SlotAddr::ReplicaOptional), vec![2]);
@@ -1297,8 +1292,8 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_key_value_pairs() {
-        let mut cmd = cmd("MSET");
-        cmd.arg("foo") // key slot 12182
+        let cmd = cmd("MSET")
+        .arg("foo") // key slot 12182
             .arg("bar") // value
             .arg("foo2") // key slot 1044
             .arg("bar2")    // value
@@ -1320,8 +1315,7 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_keys_and_path() {
-        let mut cmd = cmd("JSON.MGET");
-        cmd.arg("foo") // key slot 12182
+        let cmd = cmd("JSON.MGET").arg("foo") // key slot 12182
             .arg("bar") // key slot 5061
             .arg("baz") // key slot 4813
             .arg("{bar}vaz") // key slot 5061
@@ -1343,8 +1337,7 @@ mod tests_routing {
 
     #[test]
     fn test_multi_shard_key_with_two_arg_triples() {
-        let mut cmd = cmd("JSON.MSET");
-        cmd
+        let cmd = cmd("JSON.MSET")
             .arg("foo") // key slot 12182
             .arg("$.a") // path
             .arg("bar") // value
@@ -1370,12 +1363,7 @@ mod tests_routing {
 
     #[test]
     fn test_command_creation_for_multi_shard() {
-        let mut original_cmd = cmd("DEL");
-        original_cmd
-            .arg("foo")
-            .arg("bar")
-            .arg("baz")
-            .arg("{bar}vaz");
+        let original_cmd = cmd("DEL").arg("foo").arg("bar").arg("baz").arg("{bar}vaz");
         let routing = RoutingInfo::for_routable(&original_cmd);
         let expected = [vec![0], vec![1, 3], vec![2]];
 
@@ -1401,8 +1389,7 @@ mod tests_routing {
 
     #[test]
     fn test_combine_multi_shard_to_single_node_when_all_keys_are_in_same_slot() {
-        let mut cmd = cmd("DEL");
-        cmd.arg("foo").arg("{foo}bar").arg("{foo}baz");
+        let cmd = cmd("DEL").arg("foo").arg("{foo}bar").arg("{foo}baz");
         let routing = RoutingInfo::for_routable(&cmd);
 
         assert!(

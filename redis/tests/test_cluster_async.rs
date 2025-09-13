@@ -21,9 +21,9 @@ mod cluster_async {
         cluster::ClusterClient,
         cluster_async::Connect,
         cluster_routing::{MultipleNodeRoutingInfo, RoutingInfo, SingleNodeRoutingInfo},
-        cmd, from_owned_redis_value, parse_redis_value, pipe, AsyncCommands, Cmd, InfoDict,
-        IntoConnectionInfo, ProtocolVersion, RedisError, RedisFuture, RedisResult, Script,
-        ServerErrorKind, Value,
+        cmd, from_owned_redis_value, parse_redis_value, pipe, AsyncCommands, Cmd, FrozenCmd,
+        InfoDict, IntoConnectionInfo, ProtocolVersion, RedisError, RedisFuture, RedisResult,
+        Script, ServerErrorKind, Value,
     };
     use redis_test::cluster::{RedisCluster, RedisClusterConfiguration};
     use redis_test::server::use_protocol;
@@ -145,7 +145,7 @@ mod cluster_async {
                 let routing = RoutingInfo::SingleNode(single_node_route);
                 assert_eq!(
                     connection
-                        .route_command(&redis::cmd("FLUSHALL"), routing)
+                        .route_command(redis::cmd("FLUSHALL").freeze(), routing)
                         .await
                         .unwrap(),
                     Value::Okay
@@ -170,13 +170,13 @@ mod cluster_async {
         block_on_all(
             async move {
                 let mut connection = cluster.async_connection().await;
-                let mut cmd = redis::cmd("INFO");
                 // The other sections change with time.
                 // TODO - after we remove support of redis 6, we can add more than a single section - .arg("Persistence").arg("Memory").arg("Replication")
-                cmd.arg("Clients");
+                let cmd = redis::cmd("INFO").arg("Clients").freeze();
+
                 let value = connection
                     .route_command(
-                        &cmd,
+                        cmd.clone(),
                         RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllNodes, None)),
                     )
                     .await
@@ -192,7 +192,7 @@ mod cluster_async {
 
                 let value = connection
                     .route_command(
-                        &cmd,
+                        cmd,
                         RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress { host, port }),
                     )
                     .await
@@ -251,7 +251,7 @@ mod cluster_async {
                 let route_to_all_nodes = redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes;
                 let routing = RoutingInfo::MultiNode((route_to_all_nodes, None));
                 let res = connection
-                    .route_command(&redis::cmd("INFO"), routing)
+                    .route_command(redis::cmd("INFO").freeze(), routing)
                     .await
                     .unwrap();
                 let (addresses, infos) = split_to_addresses_and_info(res);
@@ -274,7 +274,7 @@ mod cluster_async {
                     redis::cluster_routing::MultipleNodeRoutingInfo::AllMasters;
                 let routing = RoutingInfo::MultiNode((route_to_all_primaries, None));
                 let res = connection
-                    .route_command(&redis::cmd("INFO"), routing)
+                    .route_command(redis::cmd("INFO").freeze(), routing)
                     .await
                     .unwrap();
                 let (addresses, infos) = split_to_addresses_and_info(res);
@@ -535,8 +535,7 @@ mod cluster_async {
                         .await
                         .unwrap_or_else(|e| panic!("Failed to get connection: {e}"));
 
-                    let info: InfoDict = redis::Cmd::new()
-                        .arg("INFO")
+                    let info: InfoDict = redis::cmd("INFO")
                         .query_async(&mut conn)
                         .await
                         .expect("INFO");
@@ -636,7 +635,7 @@ mod cluster_async {
     }
 
     impl ConnectionLike for ErrorConnection {
-        fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
+        fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
             if ERROR.load(Ordering::SeqCst) {
                 Box::pin(async move {
                     Err(RedisError::from((
@@ -1030,7 +1029,7 @@ mod cluster_async {
         assert_eq!(connection_count_clone.load(Ordering::Relaxed), 4);
 
         let value = runtime.block_on(connection.route_command(
-            &cmd("ECHO"),
+            cmd("ECHO").freeze(),
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6379,
@@ -1044,7 +1043,7 @@ mod cluster_async {
         );
 
         let value = runtime.block_on(connection.route_command(
-            &cmd("ECHO"),
+            cmd("ECHO").freeze(),
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6379,
@@ -1360,7 +1359,7 @@ mod cluster_async {
         let ports_clone = found_ports.clone();
         let mut cmd = Cmd::new();
         for arg in command.split_whitespace() {
-            cmd.arg(arg);
+            cmd = cmd.arg(arg);
         }
         let packed_cmd = cmd.get_packed_command();
         // requests should route to replica
@@ -1384,6 +1383,12 @@ mod cluster_async {
                     ports_clone.lock().unwrap().push(port);
                     return Err(Ok(Value::SimpleString("OK".into())));
                 }
+                println!(
+                    "recv: {}, packed: {}",
+                    String::from_utf8(received_cmd.to_vec()).unwrap(),
+                    String::from_utf8(packed_cmd.clone()).unwrap()
+                );
+
                 Ok(())
             },
         );
@@ -1491,10 +1496,9 @@ mod cluster_async {
             },
         );
 
-        let mut cmd = cmd("GET");
-        cmd.arg("test");
+        let cmd = cmd("GET").arg("test").freeze();
         let _ = runtime.block_on(connection.route_command(
-            &cmd,
+            cmd.clone(),
             RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllMasters, None)),
         ));
         {
@@ -1505,7 +1509,7 @@ mod cluster_async {
         }
 
         let _ = runtime.block_on(connection.route_command(
-            &cmd,
+            cmd.clone(),
             RoutingInfo::MultiNode((MultipleNodeRoutingInfo::AllNodes, None)),
         ));
         {
@@ -1516,7 +1520,7 @@ mod cluster_async {
         }
 
         let _ = runtime.block_on(connection.route_command(
-            &cmd,
+            cmd,
             RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress {
                 host: name.to_string(),
                 port: 6382,
@@ -1533,8 +1537,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_fan_out_and_aggregate_numeric_response_with_min() {
         let name = "test_async_cluster_fan_out_and_aggregate_numeric_response";
-        let mut cmd = Cmd::new();
-        cmd.arg("SLOWLOG").arg("LEN");
+        let cmd = redis::cmd("SLOWLOG").arg("LEN");
 
         let MockEnv {
             runtime,
@@ -1563,8 +1566,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_fan_out_and_aggregate_logical_array_response() {
         let name = "test_async_cluster_fan_out_and_aggregate_logical_array_response";
-        let mut cmd = Cmd::new();
-        cmd.arg("SCRIPT")
+        let cmd = redis::cmd("SCRIPT")
             .arg("EXISTS")
             .arg("foo")
             .arg("bar")
@@ -1613,8 +1615,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_fan_out_and_return_one_succeeded_response() {
         let name = "test_async_cluster_fan_out_and_return_one_succeeded_response";
-        let mut cmd = Cmd::new();
-        cmd.arg("RANDOMKEY");
+        let cmd = redis::cmd("RANDOMKEY");
         let MockEnv {
             runtime,
             async_connection: mut connection,
@@ -1650,8 +1651,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_fan_out_and_return_nil_if_no_other_value_was_received() {
         let name = "test_async_cluster_fan_out_and_return_one_succeeded_response";
-        let mut cmd = Cmd::new();
-        cmd.arg("RANDOMKEY");
+        let cmd = redis::cmd("RANDOMKEY");
         let MockEnv {
             runtime,
             async_connection: mut connection,
@@ -1677,8 +1677,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_fan_out_and_fail_one_succeeded_if_there_are_no_successes() {
         let name = "test_async_cluster_fan_out_and_fail_one_succeeded_if_there_are_no_successes";
-        let mut cmd = Cmd::new();
-        cmd.arg("SCRIPT").arg("KILL");
+        let cmd = redis::cmd("SCRIPT").arg("KILL");
         let MockEnv {
             runtime,
             async_connection: mut connection,
@@ -1797,8 +1796,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_fan_out_and_return_map_of_results_for_special_response_policy() {
         let name = "foo";
-        let mut cmd = Cmd::new();
-        cmd.arg("LATENCY").arg("LATEST");
+        let cmd = redis::cmd("LATENCY").arg("LATEST");
         let MockEnv {
             runtime,
             async_connection: mut connection,
@@ -1870,8 +1868,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_split_multi_shard_command_and_combine_arrays_of_values() {
         let name = "test_async_cluster_split_multi_shard_command_and_combine_arrays_of_values";
-        let mut cmd = cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz");
+        let cmd = cmd("MGET").arg("foo").arg("bar").arg("baz");
         let MockEnv {
             runtime,
             async_connection: mut connection,
@@ -1910,8 +1907,7 @@ mod cluster_async {
     #[test]
     fn test_async_cluster_handle_asking_error_in_split_multi_shard_command() {
         let name = "test_async_cluster_handle_asking_error_in_split_multi_shard_command";
-        let mut cmd = cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz");
+        let cmd = cmd("MGET").arg("foo").arg("bar").arg("baz");
         let asking_called = Arc::new(AtomicU16::new(0));
         let asking_called_cloned = asking_called.clone();
         let MockEnv {
@@ -2095,7 +2091,7 @@ mod cluster_async {
             },
         );
 
-        let res = runtime.block_on(connection.req_packed_command(&redis::cmd("PING")));
+        let res = runtime.block_on(connection.req_packed_command(redis::cmd("PING").freeze()));
         assert!(res.is_ok());
     }
 
@@ -2112,14 +2108,17 @@ mod cluster_async {
                 let mut connection = cluster.async_connection().await;
                 drop(cluster);
                 for _ in 0..5 {
-                    let cmd = cmd("PING");
+                    let cmd = cmd("PING").freeze();
                     let result = connection
-                        .route_command(&cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
+                        .route_command(
+                            cmd.clone(),
+                            RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random),
+                        )
                         .await;
                     // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                     assert!(result.is_err());
                     // This will route to all nodes - different path through the code.
-                    let result = connection.req_packed_command(&cmd).await;
+                    let result = connection.req_packed_command(cmd).await;
                     // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                     assert!(result.is_err());
                 }
@@ -2145,16 +2144,19 @@ mod cluster_async {
                 let mut connection = cluster.async_connection().await;
                 drop(cluster);
 
-                let cmd = cmd("PING");
+                let cmd = cmd("PING").freeze();
 
                 let result = connection
-                    .route_command(&cmd, RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random))
+                    .route_command(
+                        cmd.clone(),
+                        RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random),
+                    )
                     .await;
                 // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                 assert!(result.is_err());
 
                 // This will route to all nodes - different path through the code.
-                let result = connection.req_packed_command(&cmd).await;
+                let result = connection.req_packed_command(cmd.clone()).await;
                 // TODO - this should be a NoConnectionError, but ATM we get the errors from the failing
                 assert!(result.is_err());
 
@@ -2163,7 +2165,7 @@ mod cluster_async {
                     ..Default::default()
                 });
 
-                let result = connection.req_packed_command(&cmd).await.unwrap();
+                let result = connection.req_packed_command(cmd).await.unwrap();
                 assert_eq!(result, Value::SimpleString("PONG".to_string()));
 
                 Ok::<_, RedisError>(())
@@ -2200,7 +2202,7 @@ mod cluster_async {
                 // explicitly route to all primaries and request all succeeded
                 let result = connection
                     .route_command(
-                        &cmd,
+                        cmd.freeze(),
                         RoutingInfo::MultiNode((
                             MultipleNodeRoutingInfo::AllMasters,
                             Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),
@@ -2322,14 +2324,9 @@ mod cluster_async {
 
                 assert_eq!(count_ids(&mut conn).await.unwrap(), 2);
 
-                let mut cmd = cmd("BLPOP");
+                let cmd = cmd("BLPOP").arg("LIST").arg(0);
                 let command_that_blocks = Box::pin(async move {
-                    () = cmd
-                        .arg("LIST")
-                        .arg(0)
-                        .exec_async(&mut connection_to_dispose_of)
-                        .await
-                        .unwrap();
+                    () = cmd.exec_async(&mut connection_to_dispose_of).await.unwrap();
                     unreachable!("This shouldn't happen");
                 })
                 .fuse();
@@ -2409,7 +2406,7 @@ mod cluster_async {
         async fn check_if_redis_6(conn: &mut ClusterConnection) -> bool {
             let response = conn
                 .route_command(
-                    cmd("INFO").arg("server"),
+                    cmd("INFO").arg("server").freeze(),
                     RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random),
                 )
                 .await
@@ -2938,7 +2935,7 @@ mod cluster_async {
                     let cmd = cmd("PING");
                     let _ = pubsub_conn
                         .route_command(
-                            &cmd,
+                            cmd.freeze(),
                             RoutingInfo::MultiNode((
                                 MultipleNodeRoutingInfo::AllMasters,
                                 Some(redis::cluster_routing::ResponsePolicy::AllSucceeded),

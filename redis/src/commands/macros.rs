@@ -220,7 +220,10 @@ macro_rules! implement_commands {
                 #[allow(clippy::extra_unused_lifetimes, clippy::needless_lifetimes)]
                 fn $name<$lifetime, $($tyargs: $ty, )* RV: FromRedisValue>(
                     &mut self $(, $argname: $argty)*) -> RedisResult<RV>
-                    { Cmd::$name($($argname),*).query(self) }
+                    {
+                        let cmd = Cmd::$name($($argname),*);
+                        cmd.query(self)
+                    }
             )*
 
             implement_iterators! {
@@ -234,7 +237,7 @@ macro_rules! implement_commands {
                 $(#[$attr])*
                 #[allow(clippy::extra_unused_lifetimes, clippy::needless_lifetimes)]
                 pub fn $name<$lifetime, $($tyargs: $ty),*>($($argname: $argty),*) -> Self {
-                    ::std::mem::take($body)
+                    $body
                 }
             )*
         }
@@ -369,7 +372,7 @@ macro_rules! implement_commands {
                 pub fn $name<$lifetime, $($tyargs: $ty),*>(
                     &mut self $(, $argname: $argty)*
                 ) -> &mut Self {
-                    self.add_command(::std::mem::take($body))
+                    self.add_command($body)
                 }
             )*
         }
@@ -386,7 +389,7 @@ macro_rules! implement_commands {
                 pub fn $name<$lifetime, $($tyargs: $ty),*>(
                     &mut self $(, $argname: $argty)*
                 ) -> &mut Self {
-                    self.add_command(::std::mem::take($body))
+                    self.add_command($body)
                 }
             )*
         }

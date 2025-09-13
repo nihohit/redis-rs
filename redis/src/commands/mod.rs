@@ -924,7 +924,7 @@ implement_commands! {
     /// Sends a ping to the server
     /// [Redis Docs](https://redis.io/commands/PING)
     fn ping<>() -> (String) {
-         &mut cmd("PING")
+         cmd("PING")
     }
 
     /// Sends a ping with a message to the server
@@ -2845,7 +2845,7 @@ assert_eq!(b, 5);
     #[cfg(feature = "script")]
     #[cfg_attr(docsrs, doc(cfg(feature = "script")))]
     fn invoke_script<>(invocation: &'a crate::ScriptInvocation<'a>) -> Generic {
-        &mut invocation.eval_cmd()
+        invocation.eval_cmd()
     }
 
     // cleanup commands
@@ -2862,7 +2862,7 @@ assert_eq!(b, 5);
     /// ```
     /// [Redis Docs](https://redis.io/commands/FLUSHALL)
     fn flushall<>() -> () {
-        &mut cmd("FLUSHALL")
+        cmd("FLUSHALL")
     }
 
     /// Deletes all the keys of all databases with options
@@ -2887,7 +2887,7 @@ assert_eq!(b, 5);
     /// ```
     /// [Redis Docs](https://redis.io/commands/FLUSHDB)
     fn flushdb<>() -> () {
-        &mut cmd("FLUSHDB")
+        cmd("FLUSHDB")
     }
 
     /// Deletes all the keys of the current database with options
@@ -3585,14 +3585,13 @@ impl ToRedisArgs for SortedSetAddOptions {
 /// Creates HELLO command for RESP3 with RedisConnectionInfo
 /// [Redis Docs](https://redis.io/commands/HELLO)
 pub fn resp3_hello(connection_info: &RedisConnectionInfo) -> Cmd {
-    let mut hello_cmd = cmd("HELLO");
-    hello_cmd.arg("3");
+    let mut hello_cmd = cmd("HELLO").arg("3");
     if let Some(password) = &connection_info.password {
         let username: &str = match connection_info.username.as_ref() {
             None => "default",
             Some(username) => username,
         };
-        hello_cmd.arg("AUTH").arg(username).arg(password.as_bytes());
+        hello_cmd = hello_cmd.arg("AUTH").arg(username).arg(password.as_bytes());
     }
 
     hello_cmd

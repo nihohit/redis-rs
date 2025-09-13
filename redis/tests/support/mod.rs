@@ -14,8 +14,8 @@ use std::{
 };
 use std::{io, thread::sleep, time::Duration};
 
-#[cfg(feature = "cache-aio")]
-use redis::caching::CacheConfig;
+// #[cfg(feature = "cache-aio")]
+// use redis::caching::CacheConfig;
 #[cfg(feature = "tls-rustls")]
 use redis::{ClientTlsConfig, TlsCertificates};
 
@@ -286,29 +286,29 @@ impl TestContext {
         self.server.stop();
     }
 
-    #[cfg(all(feature = "aio", feature = "cache-aio"))]
-    pub fn async_connection_with_cache(
-        &self,
-    ) -> impl Future<Output = redis::RedisResult<redis::aio::MultiplexedConnection>> {
-        self.async_connection_with_cache_config(CacheConfig::default())
-    }
+    // #[cfg(all(feature = "aio", feature = "cache-aio"))]
+    // pub fn async_connection_with_cache(
+    //     &self,
+    // ) -> impl Future<Output = redis::RedisResult<redis::aio::MultiplexedConnection>> {
+    //     self.async_connection_with_cache_config(CacheConfig::default())
+    // }
 
-    #[cfg(all(feature = "aio", feature = "cache-aio"))]
-    pub fn async_connection_with_cache_config(
-        &self,
-        cache_config: CacheConfig,
-    ) -> impl Future<Output = redis::RedisResult<redis::aio::MultiplexedConnection>> {
-        use redis::AsyncConnectionConfig;
+    // #[cfg(all(feature = "aio", feature = "cache-aio"))]
+    // pub fn async_connection_with_cache_config(
+    //     &self,
+    //     cache_config: CacheConfig,
+    // ) -> impl Future<Output = redis::RedisResult<redis::aio::MultiplexedConnection>> {
+    //     use redis::AsyncConnectionConfig;
 
-        let client = self.client.clone();
-        async move {
-            client
-                .get_multiplexed_async_connection_with_config(
-                    &AsyncConnectionConfig::new().set_cache_config(cache_config),
-                )
-                .await
-        }
-    }
+    //     let client = self.client.clone();
+    //     async move {
+    //         client
+    //             .get_multiplexed_async_connection_with_config(
+    //                 &AsyncConnectionConfig::new().set_cache_config(cache_config),
+    //             )
+    //             .await
+    //     }
+    // }
 
     pub fn get_version(&self) -> Version {
         let mut conn = self.connection();
@@ -417,7 +417,7 @@ pub fn parse_version(info: InfoDict) -> Version {
 }
 
 fn get_version(conn: &mut impl redis::ConnectionLike) -> Version {
-    let info: InfoDict = redis::Cmd::new().arg("INFO").query(conn).unwrap();
+    let info: InfoDict = redis::cmd("INFO").query(conn).unwrap();
     parse_version(info)
 }
 

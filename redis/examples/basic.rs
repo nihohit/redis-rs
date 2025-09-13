@@ -56,8 +56,7 @@ fn do_show_scanning(con: &mut redis::Connection) -> redis::RedisResult<()> {
 
     // since rust currently does not track temporaries for us, we need to
     // store it in a local variable.
-    let mut cmd = redis::cmd("SSCAN");
-    cmd.arg("my_set").cursor_arg(0);
+    let cmd = redis::cmd("SSCAN").arg("my_set").cursor_arg(0);
 
     let iter = cmd.iter::<i32>(con)?;
 

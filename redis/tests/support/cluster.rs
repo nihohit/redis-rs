@@ -153,8 +153,7 @@ impl TestClusterContext {
 
     pub fn wait_for_cluster_up(&self) {
         let mut con = self.connection();
-        let mut c = redis::cmd("CLUSTER");
-        c.arg("INFO");
+        let c = redis::cmd("CLUSTER").arg("INFO");
 
         for _ in 0..100 {
             let r: String = c.query::<String>(&mut con).unwrap();

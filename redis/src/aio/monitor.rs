@@ -31,8 +31,8 @@ impl Monitor {
         setup_connection(
             &mut codec,
             connection_info,
-            #[cfg(feature = "cache-aio")]
-            None,
+            // #[cfg(feature = "cache-aio")]
+            // None,
         )
         .await?;
         codec.send(cmd("MONITOR").get_packed_command()).await?;

@@ -1,5 +1,5 @@
 //! Adds async IO support to redis.
-use crate::cmd::Cmd;
+use crate::cmd::FrozenCmd;
 use crate::connection::{
     check_connection_setup, connection_setup_pipeline, AuthResult, ConnectionSetupComponents,
     RedisConnectionInfo,
@@ -73,7 +73,7 @@ impl<S> AsyncStream for S where S: AsyncRead + AsyncWrite {}
 pub trait ConnectionLike {
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value>;
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value>;
 
     /// Sends multiple already encoded (packed) command into the TCP socket
     /// and reads `count` responses from it.  This is used to implement
@@ -124,7 +124,7 @@ where
 pub(super) async fn setup_connection<T>(
     codec: &mut T,
     connection_info: &RedisConnectionInfo,
-    #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
+    // #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
 ) -> RedisResult<()>
 where
     T: Sink<Vec<u8>, Error = RedisError>,
@@ -136,8 +136,8 @@ where
         connection_setup_pipeline(
             connection_info,
             true,
-            #[cfg(feature = "cache-aio")]
-            cache_config,
+            // #[cfg(feature = "cache-aio")]
+            // cache_config,
         ),
     )
     .await?
@@ -148,8 +148,8 @@ where
             connection_setup_pipeline(
                 connection_info,
                 false,
-                #[cfg(feature = "cache-aio")]
-                cache_config,
+                // #[cfg(feature = "cache-aio")]
+                // cache_config,
             ),
         )
         .await?;

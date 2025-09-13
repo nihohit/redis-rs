@@ -115,15 +115,15 @@ use crate::{
         slot_map::{Slot, SlotMap},
         topology::parse_slots,
     },
-    cmd,
+    cmd::{cmd, FrozenCmd},
     errors::closed_connection_error,
     subscription_tracker::SubscriptionTracker,
-    AsyncConnectionConfig, Cmd, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError,
-    RedisFuture, RedisResult, ToRedisArgs, Value,
+    AsyncConnectionConfig, ConnectionInfo, ErrorKind, IntoConnectionInfo, RedisError, RedisFuture,
+    RedisResult, ToRedisArgs, Value,
 };
 
-#[cfg(feature = "cache-aio")]
-use crate::caching::{CacheManager, CacheStatistics};
+// #[cfg(feature = "cache-aio")]
+// use crate::caching::{CacheManager, CacheStatistics};
 use crate::ProtocolVersion;
 use arcstr::ArcStr;
 use futures_sink::Sink;
@@ -143,8 +143,8 @@ struct ClientSideState {
     _task_handle: HandleContainer,
     response_timeout: Option<Duration>,
     runtime: Runtime,
-    #[cfg(feature = "cache-aio")]
-    cache_manager: Option<CacheManager>,
+    // #[cfg(feature = "cache-aio")]
+    // cache_manager: Option<CacheManager>,
 }
 
 /// This represents an async Redis Cluster connection.
@@ -167,8 +167,8 @@ where
     ) -> RedisResult<ClusterConnection<C>> {
         let protocol = cluster_params.protocol.unwrap_or_default();
         let response_timeout = cluster_params.response_timeout;
-        #[cfg(feature = "cache-aio")]
-        let cache_manager = cluster_params.cache_manager.clone();
+        // #[cfg(feature = "cache-aio")]
+        // let cache_manager = cluster_params.cache_manager.clone();
         let runtime = Runtime::locate();
         ClusterConnInner::new(initial_nodes, cluster_params)
             .await
@@ -189,22 +189,26 @@ where
                         _task_handle,
                         response_timeout,
                         runtime,
-                        #[cfg(feature = "cache-aio")]
-                        cache_manager,
+                        // #[cfg(feature = "cache-aio")]
+                        // cache_manager,
                     }),
                 }
             })
     }
 
     /// Send a command to the given `routing`, and aggregate the response according to `response_policy`.
-    pub async fn route_command(&mut self, cmd: Cmd, routing: RoutingInfo) -> RedisResult<Value> {
+    pub async fn route_command(
+        &mut self,
+        cmd: FrozenCmd,
+        routing: RoutingInfo,
+    ) -> RedisResult<Value> {
         trace!("send_packed_command");
         let (sender, receiver) = oneshot::channel();
         let request = async {
             self.sender
                 .send(Message {
                     cmd: CmdArg::Cmd {
-                        cmd: Arc::new(cmd),
+                        cmd,
                         routing: routing.into(),
                     },
                     sender,
@@ -355,12 +359,12 @@ where
             .await?;
         Ok(())
     }
-    /// Gets [`CacheStatistics`] for cluster connection if caching is enabled.
-    #[cfg(feature = "cache-aio")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-    pub fn get_cache_statistics(&self) -> Option<CacheStatistics> {
-        self.state.cache_manager.as_ref().map(|cm| cm.statistics())
-    }
+    // /// Gets [`CacheStatistics`] for cluster connection if caching is enabled.
+    // #[cfg(feature = "cache-aio")]
+    // #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
+    // pub fn get_cache_statistics(&self) -> Option<CacheStatistics> {
+    //     self.state.cache_manager.as_ref().map(|cm| cm.statistics())
+    // }
 }
 
 type ConnectionMap<C> = HashMap<ArcStr, C>;
@@ -544,7 +548,7 @@ where
                 retry: 0,
                 sender: request::ResultExpectation::Internal,
                 cmd: CmdArg::Cmd {
-                    cmd: Arc::new(cmd.clone()),
+                    cmd: cmd.clone().freeze(),
                     routing,
                 },
             }
@@ -596,7 +600,7 @@ where
         for (addr, conn) in &mut *connections {
             result = async {
                 let value = conn
-                    .req_packed_command(slot_cmd())
+                    .req_packed_command(slot_cmd().freeze())
                     .await
                     .and_then(|value| value.extract_error())?;
                 let v: Vec<Slot> = parse_slots(value, addr.rsplit_once(':').unwrap().0)?;
@@ -787,7 +791,7 @@ where
     }
 
     async fn execute_on_multiple_nodes<'a>(
-        cmd: &'a Arc<Cmd>,
+        cmd: &'a FrozenCmd,
         routing: &'a MultipleNodeRoutingInfo,
         core: Core<C>,
         response_policy: Option<ResponsePolicy>,
@@ -806,7 +810,7 @@ where
             );
         }
         let (receivers, requests): (Vec<_>, Vec<_>) = {
-            let to_request = |(addr, cmd): (&ArcStr, Arc<Cmd>)| {
+            let to_request = |(addr, cmd): (&ArcStr, FrozenCmd)| {
                 read_guard.0.get(addr).cloned().map(|conn| {
                     let (sender, receiver) = oneshot::channel();
                     let addr = addr.clone();
@@ -848,11 +852,11 @@ where
                     .filter_map(|(index, addr_opt)| {
                         addr_opt.and_then(|addr| {
                             let (_, indices) = routes.get(index).unwrap();
-                            let cmd =
-                                Arc::new(crate::cluster_routing::command_for_multi_slot_indices(
-                                    cmd.as_ref(),
-                                    indices.iter(),
-                                ));
+                            let cmd = crate::cluster_routing::command_for_multi_slot_indices(
+                                cmd,
+                                indices.iter(),
+                            )
+                            .freeze();
                             to_request((addr, cmd))
                         })
                     })
@@ -871,7 +875,7 @@ where
     }
 
     async fn try_cmd_request(
-        cmd: Arc<Cmd>,
+        cmd: FrozenCmd,
         routing: InternalRoutingInfo<C>,
         core: Core<C>,
     ) -> OperationResult {
@@ -891,7 +895,9 @@ where
         match Self::get_connection(route, core).await {
             Ok((addr, mut conn)) => (
                 addr.into(),
-                conn.req_packed_command(cmd).await.map(Response::Single),
+                conn.req_packed_command((cmd).clone())
+                    .await
+                    .map(Response::Single),
             ),
             Err(err) => (OperationTarget::NotFound, Err(err)),
         }
@@ -1017,7 +1023,7 @@ where
         };
         if asking {
             let _ = conn
-                .req_packed_command(crate::cmd::cmd("ASKING"))
+                .req_packed_command(crate::cmd::cmd("ASKING").freeze())
                 .await
                 .and_then(|value| value.extract_error());
         }
@@ -1210,7 +1216,7 @@ where
             // TODO - benchmark whether checking whether the command is a subscription outside of the mutex is more performant.
             let mut tracker = tracker.lock().unwrap();
             match &cmd {
-                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd.as_ref()),
+                CmdArg::Cmd { cmd, .. } => tracker.update_with_cmd(cmd),
                 CmdArg::Pipeline { pipeline, .. } => {
                     tracker.update_with_pipeline(pipeline.as_ref())
                 }
@@ -1295,7 +1301,7 @@ impl<C> ConnectionLike for ClusterConnection<C>
 where
     C: ConnectionLike + Send + Clone + Unpin + Sync + Connect + 'static,
 {
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
         let routing = RoutingInfo::for_routable(&cmd)
             .unwrap_or(RoutingInfo::SingleNode(SingleNodeRoutingInfo::Random));
         self.route_command(cmd, routing).boxed()
@@ -1368,8 +1374,8 @@ where
     let push_sender = params.async_push_sender.clone();
     let tcp_settings = params.tcp_settings.clone();
     let dns_resolver = params.async_dns_resolver.clone();
-    #[cfg(feature = "cache-aio")]
-    let cache_manager = params.cache_manager.clone();
+    // #[cfg(feature = "cache-aio")]
+    // let cache_manager = params.cache_manager.clone();
     let mut info = get_connection_info(node, params)?;
     info.tcp_settings = tcp_settings;
     let mut config =
@@ -1382,10 +1388,10 @@ where
     if let Some(resolver) = dns_resolver {
         config = config.set_dns_resolver_internal(resolver.clone());
     }
-    #[cfg(feature = "cache-aio")]
-    if let Some(cache_manager) = cache_manager {
-        config = config.set_cache_manager(cache_manager.clone_and_increase_epoch());
-    }
+    // #[cfg(feature = "cache-aio")]
+    // if let Some(cache_manager) = cache_manager {
+    //     config = config.set_cache_manager(cache_manager.clone_and_increase_epoch());
+    // }
     let mut conn = match C::connect_with_config(info, config).await {
         Ok(conn) => conn,
         Err(err) => {
@@ -1399,7 +1405,8 @@ where
         cmd("READONLY")
     } else {
         cmd("PING")
-    };
+    }
+    .freeze();
 
     conn.req_packed_command(check).await?;
     Ok(conn)

@@ -747,7 +747,7 @@ mod cluster {
         let ports_clone = found_ports.clone();
         let mut cmd = redis::Cmd::new();
         for arg in command.split_whitespace() {
-            cmd.arg(arg);
+            cmd = cmd.arg(arg);
         }
         let packed_cmd = cmd.get_packed_command();
         // requests should route to replica
@@ -855,8 +855,7 @@ mod cluster {
     #[test]
     fn test_cluster_split_multi_shard_command_and_combine_arrays_of_values() {
         let name = "test_cluster_split_multi_shard_command_and_combine_arrays_of_values";
-        let mut cmd = cmd("MGET");
-        cmd.arg("foo").arg("bar").arg("baz");
+        let cmd = cmd("MGET").arg("foo").arg("bar").arg("baz");
         let MockEnv {
             mut connection,
             handler: _handler,

@@ -1,7 +1,7 @@
 use super::{AsyncPushSender, ConnectionLike, Runtime, SharedHandleContainer, TaskHandle};
-#[cfg(feature = "cache-aio")]
-use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
-use crate::cmd::{count_digits, Cmd};
+// #[cfg(feature = "cache-aio")]
+// use crate::caching::{CacheManager, CacheStatistics, PrepareCacheResult};
+use crate::cmd::FrozenCmd;
 use crate::parser::ValueCodec;
 use crate::types::{RedisFuture, RedisResult, Value};
 use crate::{
@@ -14,6 +14,7 @@ use ::tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot},
 };
+use bytes::Bytes;
 use futures_util::{
     future::{Future, FutureExt},
     ready,
@@ -66,8 +67,8 @@ impl ResponseAggregate {
 }
 
 enum Input {
-    Cmd { arg_count: usize, data: Vec<u8> },
-    Pipeline(Vec<u8>),
+    Separate { arg_count: usize, data: Bytes },
+    Full(Vec<u8>),
 }
 
 struct InFlight {
@@ -100,19 +101,19 @@ impl Debug for Pipeline {
     }
 }
 
-#[cfg(feature = "cache-aio")]
-pin_project! {
-    struct PipelineSink<T> {
-        #[pin]
-        sink_stream: T,
-        in_flight: VecDeque<InFlight>,
-        error: Option<RedisError>,
-        push_sender: Option<Arc<dyn AsyncPushSender>>,
-        cache_manager: Option<CacheManager>,
-    }
-}
+// #[cfg(feature = "cache-aio")]
+// pin_project! {
+//     struct PipelineSink<T> {
+//         #[pin]
+//         sink_stream: T,
+//         in_flight: VecDeque<InFlight>,
+//         error: Option<RedisError>,
+//         push_sender: Option<Arc<dyn AsyncPushSender>>,
+//         cache_manager: Option<CacheManager>,
+//     }
+// }
 
-#[cfg(not(feature = "cache-aio"))]
+// #[cfg(not(feature = "cache-aio"))]
 pin_project! {
     struct PipelineSink<T> {
         #[pin]
@@ -140,18 +141,18 @@ where
     fn new(
         sink_stream: T,
         push_sender: Option<Arc<dyn AsyncPushSender>>,
-        #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
+        // #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> Self
     where
-        T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: for<'a> Sink<&'a [u8], Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
     {
         PipelineSink {
             sink_stream,
             in_flight: VecDeque::new(),
             error: None,
             push_sender,
-            #[cfg(feature = "cache-aio")]
-            cache_manager,
+            // #[cfg(feature = "cache-aio")]
+            // cache_manager,
         }
     }
 
@@ -180,10 +181,10 @@ where
         let result = match result {
             // If this push message isn't a reply, we'll pass it as-is to the push manager and stop iterating
             Ok(Value::Push { kind, data }) if !kind.has_reply() => {
-                #[cfg(feature = "cache-aio")]
-                if let Some(cache_manager) = &self_.cache_manager {
-                    cache_manager.handle_push_value(&kind, &data);
-                }
+                // #[cfg(feature = "cache-aio")]
+                // if let Some(cache_manager) = &self_.cache_manager {
+                //     cache_manager.handle_push_value(&kind, &data);
+                // }
                 send_push(self_.push_sender, PushInfo { kind, data });
 
                 return;
@@ -266,7 +267,9 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+    T: for<'a> Sink<&'a [u8], Error = RedisError>,
+    T: Stream<Item = RedisResult<Value>>,
+    T: 'static,
 {
     type Error = ();
 
@@ -306,21 +309,19 @@ where
             return Err(());
         }
 
-        let data = match input {
-            Input::Cmd { arg_count, data } => {
-                let mut vec = Vec::with_capacity(3 + count_digits(arg_count));
-                crate::cmd::write_count(&mut vec, arg_count).unwrap();
-                match self_.sink_stream.as_mut().start_send(vec) {
-                    Ok(()) => data,
-                    Err(err) => {
-                        let _ = output.send(Err(err));
-                        return Err(());
-                    }
-                }
+        let mut send_to_sink = |byte_slice| self_.sink_stream.as_mut().start_send(byte_slice);
+        let result = match input {
+            Input::Separate { arg_count, data } => {
+                let mut buffer = itoa::Buffer::new();
+                let byte_slice = buffer.format(arg_count).as_bytes();
+                send_to_sink(b"*")
+                    .and_then(|_| send_to_sink(byte_slice))
+                    .and_then(|_| send_to_sink(b"\r\n"))
+                    .and_then(|_| send_to_sink(&data))
             }
-            Input::Pipeline(items) => items,
+            Input::Full(full_command) => send_to_sink(&full_command),
         };
-        match self_.sink_stream.start_send(data) {
+        match result {
             Ok(()) => {
                 let response_aggregate = ResponseAggregate::new(expectation);
                 let entry = InFlight {
@@ -373,10 +374,10 @@ impl Pipeline {
     fn new<T>(
         sink_stream: T,
         push_sender: Option<Arc<dyn AsyncPushSender>>,
-        #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
+        // #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<Vec<u8>, Error = RedisError>,
+        T: for<'a> Sink<&'a [u8], Error = RedisError>,
         T: Stream<Item = RedisResult<Value>>,
         T: Unpin + Send + 'static,
     {
@@ -386,8 +387,8 @@ impl Pipeline {
         let sink = PipelineSink::new(
             sink_stream,
             push_sender,
-            #[cfg(feature = "cache-aio")]
-            cache_manager,
+            // #[cfg(feature = "cache-aio")]
+            // cache_manager,
         );
         let f = stream::poll_fn(move |cx| receiver.poll_recv(cx))
             .map(Ok)
@@ -456,8 +457,8 @@ pub struct MultiplexedConnection {
     // This handle is only set for connection whose task was spawned by the crate, not for users who spawned their own
     // task.
     _task_handle: Option<SharedHandleContainer>,
-    #[cfg(feature = "cache-aio")]
-    pub(crate) cache_manager: Option<CacheManager>,
+    // #[cfg(feature = "cache-aio")]
+    // pub(crate) cache_manager: Option<CacheManager>,
 }
 
 impl Debug for MultiplexedConnection {
@@ -500,35 +501,35 @@ impl MultiplexedConnection {
             );
         }
 
-        #[cfg(feature = "cache-aio")]
-        let cache_config = config.cache.as_ref().map(|cache| match cache {
-            crate::client::Cache::Config(cache_config) => *cache_config,
-            #[cfg(any(feature = "connection-manager", feature = "cluster-async"))]
-            crate::client::Cache::Manager(cache_manager) => cache_manager.cache_config,
-        });
-        #[cfg(feature = "cache-aio")]
-        let cache_manager_opt = config
-            .cache
-            .map(|cache| {
-                check_resp3!(
-                    connection_info.protocol,
-                    "Can only enable client side caching in a connection using RESP3"
-                );
-                match cache {
-                    crate::client::Cache::Config(cache_config) => {
-                        Ok(CacheManager::new(cache_config))
-                    }
-                    #[cfg(any(feature = "connection-manager", feature = "cluster-async"))]
-                    crate::client::Cache::Manager(cache_manager) => Ok(cache_manager),
-                }
-            })
-            .transpose()?;
+        // #[cfg(feature = "cache-aio")]
+        // let cache_config = config.cache.as_ref().map(|cache| match cache {
+        //     crate::client::Cache::Config(cache_config) => *cache_config,
+        //     #[cfg(any(feature = "connection-manager", feature = "cluster-async"))]
+        //     crate::client::Cache::Manager(cache_manager) => cache_manager.cache_config,
+        // });
+        // #[cfg(feature = "cache-aio")]
+        // let cache_manager_opt = config
+        //     .cache
+        //     .map(|cache| {
+        //         check_resp3!(
+        //             connection_info.protocol,
+        //             "Can only enable client side caching in a connection using RESP3"
+        //         );
+        //         match cache {
+        //             crate::client::Cache::Config(cache_config) => {
+        //                 Ok(CacheManager::new(cache_config))
+        //             }
+        //             #[cfg(any(feature = "connection-manager", feature = "cluster-async"))]
+        //             crate::client::Cache::Manager(cache_manager) => Ok(cache_manager),
+        //         }
+        //     })
+        //     .transpose()?;
 
         setup_connection(
             &mut codec,
             connection_info,
-            #[cfg(feature = "cache-aio")]
-            cache_config,
+            // #[cfg(feature = "cache-aio")]
+            // cache_config,
         )
         .await?;
         if config.push_sender.is_some() {
@@ -541,8 +542,8 @@ impl MultiplexedConnection {
         let (pipeline, driver) = Pipeline::new(
             codec,
             config.push_sender,
-            #[cfg(feature = "cache-aio")]
-            cache_manager_opt.clone(),
+            // #[cfg(feature = "cache-aio")]
+            // cache_manager_opt.clone(),
         );
         let con = MultiplexedConnection {
             pipeline,
@@ -550,8 +551,8 @@ impl MultiplexedConnection {
             response_timeout: config.response_timeout,
             protocol: connection_info.protocol,
             _task_handle: None,
-            #[cfg(feature = "cache-aio")]
-            cache_manager: cache_manager_opt,
+            // #[cfg(feature = "cache-aio")]
+            // cache_manager: cache_manager_opt,
         };
 
         Ok((con, driver))
@@ -570,42 +571,41 @@ impl MultiplexedConnection {
 
     /// Sends an already encoded (packed) command into the TCP socket and
     /// reads the single response from it.
-    pub async fn send_packed_command(&mut self, cmd: &Cmd) -> RedisResult<Value> {
-        #[cfg(feature = "cache-aio")]
-        if let Some(cache_manager) = &self.cache_manager {
-            match cache_manager.get_cached_cmd(cmd) {
-                PrepareCacheResult::Cached(value) => return Ok(value),
-                PrepareCacheResult::NotCached(cacheable_command) => {
-                    let mut pipeline = crate::Pipeline::new();
-                    cacheable_command.pack_command(cache_manager, &mut pipeline);
+    pub async fn send_packed_command(&mut self, cmd: FrozenCmd) -> RedisResult<Value> {
+        // #[cfg(feature = "cache-aio")]
+        // if let Some(cache_manager) = &self.cache_manager {
+        //     match cache_manager.get_cached_cmd(&cmd) {
+        //         PrepareCacheResult::Cached(value) => return Ok(value),
+        //         PrepareCacheResult::NotCached(cacheable_command) => {
+        //             let mut pipeline = crate::Pipeline::new();
+        //             cacheable_command.pack_command(cache_manager, &mut pipeline);
 
-                    let result = self
-                        .pipeline
-                        .send_recv(
-                            Input::Pipeline(pipeline.get_packed_pipeline()),
-                            Some(PipelineResponseExpectation {
-                                skipped_response_count: 0,
-                                expected_response_count: pipeline.commands.len(),
-                                is_transaction: false,
-                            }),
-                            self.response_timeout,
-                        )
-                        .await?;
-                    let replies: Vec<Value> = crate::types::from_owned_redis_value(result)?;
-                    return cacheable_command.resolve(cache_manager, replies.into_iter());
-                }
-                _ => (),
-            }
-        }
+        //             let result = self
+        //                 .pipeline
+        //                 .send_recv(
+        //                     Input::Full(pipeline.get_packed_pipeline().into()),
+        //                     Some(PipelineResponseExpectation {
+        //                         skipped_response_count: 0,
+        //                         expected_response_count: pipeline.commands.len(),
+        //                         is_transaction: false,
+        //                     }),
+        //                     self.response_timeout,
+        //                 )
+        //                 .await?;
+        //             let replies: Vec<Value> = crate::types::from_owned_redis_value(result)?;
+        //             return cacheable_command.resolve(cache_manager, replies.into_iter());
+        //         }
+        //         _ => (),
+        //     }
+        // }
         self.pipeline
             .send_recv(
-                if cmd.data_is_complete() {
-                    Input::Cmd {
-                        arg_count: cmd.args.len(),
-                        data: cmd.data.clone(),
-                    }
-                } else {
-                    Input::Pipeline(cmd.get_packed_command())
+                match cmd.0 {
+                    cmd::FrozenRepr::FullyPackaged { data, args } => Input::Separate {
+                        arg_count: args.len(),
+                        data: data.clone(),
+                    },
+                    cmd::FrozenRepr::Copy(cmd) => Input::Full(cmd.get_packed_command()),
                 },
                 None,
                 self.response_timeout,
@@ -622,29 +622,29 @@ impl MultiplexedConnection {
         offset: usize,
         count: usize,
     ) -> RedisResult<Vec<Value>> {
-        #[cfg(feature = "cache-aio")]
-        if let Some(cache_manager) = &self.cache_manager {
-            let (cacheable_pipeline, pipeline, (skipped_response_count, expected_response_count)) =
-                cache_manager.get_cached_pipeline(pipeline);
-            let result = self
-                .pipeline
-                .send_recv(
-                    Input::Pipeline(pipeline.get_packed_pipeline()),
-                    Some(PipelineResponseExpectation {
-                        skipped_response_count,
-                        expected_response_count,
-                        is_transaction: cacheable_pipeline.transaction_mode,
-                    }),
-                    self.response_timeout,
-                )
-                .await?;
+        // #[cfg(feature = "cache-aio")]
+        // if let Some(cache_manager) = &self.cache_manager {
+        //     let (cacheable_pipeline, pipeline, (skipped_response_count, expected_response_count)) =
+        //         cache_manager.get_cached_pipeline(pipeline);
+        //     let result = self
+        //         .pipeline
+        //         .send_recv(
+        //             Input::Full(pipeline.get_packed_pipeline().into()),
+        //             Some(PipelineResponseExpectation {
+        //                 skipped_response_count,
+        //                 expected_response_count,
+        //                 is_transaction: cacheable_pipeline.transaction_mode,
+        //             }),
+        //             self.response_timeout,
+        //         )
+        //         .await?;
 
-            return cacheable_pipeline.resolve(cache_manager, result);
-        }
+        //     return cacheable_pipeline.resolve(cache_manager, result);
+        // }
         let value = self
             .pipeline
             .send_recv(
-                Input::Pipeline(pipeline.get_packed_pipeline()),
+                Input::Full(pipeline.get_packed_pipeline()),
                 Some(PipelineResponseExpectation {
                     skipped_response_count: offset,
                     expected_response_count: count,
@@ -659,16 +659,16 @@ impl MultiplexedConnection {
         }
     }
 
-    /// Gets [`CacheStatistics`] for current connection if caching is enabled.
-    #[cfg(feature = "cache-aio")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
-    pub fn get_cache_statistics(&self) -> Option<CacheStatistics> {
-        self.cache_manager.as_ref().map(|cm| cm.statistics())
-    }
+    // /// Gets [`CacheStatistics`] for current connection if caching is enabled.
+    // #[cfg(feature = "cache-aio")]
+    // #[cfg_attr(docsrs, doc(cfg(feature = "cache-aio")))]
+    // pub fn get_cache_statistics(&self) -> Option<CacheStatistics> {
+    //     self.cache_manager.as_ref().map(|cm| cm.statistics())
+    // }
 }
 
 impl ConnectionLike for MultiplexedConnection {
-    fn req_packed_command<'a>(&'a mut self, cmd: Cmd) -> RedisFuture<'a, Value> {
+    fn req_packed_command<'a>(&'a mut self, cmd: FrozenCmd) -> RedisFuture<'a, Value> {
         (async move { self.send_packed_command(cmd).await }).boxed()
     }
 
