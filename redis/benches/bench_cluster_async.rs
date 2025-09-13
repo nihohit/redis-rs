@@ -1,7 +1,7 @@
 #![cfg(feature = "cluster")]
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures_util::{stream, TryStreamExt};
-use redis::RedisError;
+use redis::{aio::ConnectionLike, RedisError};
 use std::hint::black_box;
 
 use redis_test::cluster::RedisClusterConfiguration;
@@ -36,7 +36,7 @@ fn bench_cluster_async(
     group.bench_function("parallel_requests", |b| {
         let num_parallel = 100;
         let cmds: Vec<_> = (0..num_parallel)
-            .map(|i| redis::cmd("SET").arg(format!("foo{i}")).arg(i).clone())
+            .map(|i| redis::cmd("SET").arg(format!("foo{i}")).arg(i).freeze())
             .collect();
 
         let mut connections = (0..num_parallel).map(|_| con.clone()).collect::<Vec<_>>();
@@ -46,9 +46,9 @@ fn bench_cluster_async(
                 .block_on(async {
                     cmds.iter()
                         .zip(&mut connections)
-                        .map(|(cmd, con)| cmd.exec_async(con))
+                        .map(|(cmd, con)| con.req_packed_command(cmd.clone()))
                         .collect::<stream::FuturesUnordered<_>>()
-                        .try_for_each(|()| async { Ok(()) })
+                        .try_for_each(|_| async { Ok(()) })
                         .await
                 })
                 .unwrap();

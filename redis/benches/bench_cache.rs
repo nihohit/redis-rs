@@ -10,7 +10,7 @@ use rand::{
     distr::{Bernoulli, Distribution},
     Rng,
 };
-use redis::caching::CacheConfig;
+// use redis::caching::CacheConfig;
 use std::env;
 fn generate_commands(key: String, total_command: u32, total_read: u32) -> Vec<Cmd> {
     let mut cmds = vec![];
@@ -40,33 +40,33 @@ async fn benchmark_executer(
     per_key_command: u32,
     key_count: u32,
 ) {
-    let ctx = TestContext::new();
-    let con = if is_cache_enabled {
-        ctx.async_connection_with_cache_config(CacheConfig::new())
-            .await
-            .unwrap()
-    } else {
-        ctx.multiplexed_async_connection_tokio().await.unwrap()
-    };
+    // let ctx = TestContext::new();
+    // let con = if is_cache_enabled {
+    //     ctx.async_connection_with_cache_config(CacheConfig::new())
+    //         .await
+    //         .unwrap()
+    // } else {
+    //     ctx.multiplexed_async_connection_tokio().await.unwrap()
+    // };
 
-    let mut rng = rand::rng();
-    let mut handles = Vec::new();
-    for _ in 0..key_count {
-        let mut con = con.clone();
-        let key = format!("{}", rng.random_range(1..1000));
-        handles.push(tokio::spawn(async move {
-            for cmd in generate_commands(
-                key,
-                per_key_command,
-                (read_ratio * per_key_command as f32) as u32,
-            ) {
-                let _: () = cmd.query_async(&mut con).await.unwrap();
-            }
-        }));
-    }
-    for job_handle in handles {
-        job_handle.await.unwrap();
-    }
+    // let mut rng = rand::rng();
+    // let mut handles = Vec::new();
+    // for _ in 0..key_count {
+    //     let mut con = con.clone();
+    //     let key = format!("{}", rng.random_range(1..1000));
+    //     handles.push(tokio::spawn(async move {
+    //         for cmd in generate_commands(
+    //             key,
+    //             per_key_command,
+    //             (read_ratio * per_key_command as f32) as u32,
+    //         ) {
+    //             let _: () = cmd.query_async(&mut con).await.unwrap();
+    //         }
+    //     }));
+    // }
+    // for job_handle in handles {
+    //     job_handle.await.unwrap();
+    // }
 }
 
 fn prepare_benchmark(

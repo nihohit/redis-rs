@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Bencher, Criterion, Throughput};
 use futures::{prelude::*, stream};
-use redis::{RedisError, Value};
+use redis::{aio::ConnectionLike, RedisError, Value};
 
 use support::*;
 
@@ -121,9 +121,7 @@ fn bench_async_long_pipeline(b: &mut Bencher) {
 fn bench_multiplexed_async_long_pipeline(b: &mut Bencher) {
     let ctx = TestContext::new();
     let runtime = current_thread_runtime();
-    let mut con = runtime
-        .block_on(ctx.multiplexed_async_connection_tokio())
-        .unwrap();
+    let mut con = runtime.block_on(ctx.async_connection()).unwrap();
 
     let pipe = long_pipeline();
 
@@ -137,12 +135,10 @@ fn bench_multiplexed_async_long_pipeline(b: &mut Bencher) {
 fn bench_multiplexed_async_implicit_pipeline(b: &mut Bencher) {
     let ctx = TestContext::new();
     let runtime = current_thread_runtime();
-    let con = runtime
-        .block_on(ctx.multiplexed_async_connection_tokio())
-        .unwrap();
+    let con = runtime.block_on(ctx.async_connection()).unwrap();
 
     let cmds: Vec<_> = (0..PIPELINE_QUERIES)
-        .map(|i| redis::cmd("SET").arg(format!("foo{i}")).arg(i))
+        .map(|i| redis::cmd("SET").arg(format!("foo{i}")).arg(i).freeze())
         .collect();
 
     let mut connections = (0..PIPELINE_QUERIES)
@@ -154,9 +150,9 @@ fn bench_multiplexed_async_implicit_pipeline(b: &mut Bencher) {
             .block_on(async {
                 cmds.iter()
                     .zip(&mut connections)
-                    .map(|(cmd, con)| cmd.exec_async(con))
+                    .map(|(cmd, con)| con.req_packed_command(cmd.clone()))
                     .collect::<stream::FuturesUnordered<_>>()
-                    .try_for_each(|()| async { Ok(()) })
+                    .try_for_each(|_| async { Ok(()) })
                     .await
             })
             .unwrap();
@@ -193,13 +189,12 @@ fn bench_query(c: &mut Criterion) {
 
 fn bench_encode_small(b: &mut Bencher) {
     b.iter(|| {
-        let mut cmd = redis::cmd("HSETX");
+        let cmd = redis::cmd("HSETX");
 
         cmd.arg("ABC:1237897325302:878241asdyuxpioaswehqwu")
             .arg("some hash key")
-            .arg(124757920);
-
-        cmd.get_packed_command()
+            .arg(124757920)
+            .get_packed_command()
     });
 }
 
