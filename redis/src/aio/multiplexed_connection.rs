@@ -18,7 +18,7 @@ use ::tokio::{
 use futures_util::{
     future::{Future, FutureExt},
     ready,
-    sink::{Sink, SinkExt},
+    sink::Sink,
     stream::{self, Stream, StreamExt},
 };
 use pin_project_lite::pin_project;
@@ -302,45 +302,51 @@ where
             return Ok(());
         }
 
-        let mut self_ = self.as_mut().project();
-
-        if let Some(err) = self_.error.take() {
+        if let Some(err) = self.as_mut().project().error.take() {
             let _ = output.send(Err(err));
             return Err(());
         }
 
         let result = match input {
             Input::Separate(cmd) => {
-                let mut buffer = self_.sink_stream.buffer(cmd.len());
-                let mut send_to_sink = |byte_slice| buffer.start_send_unpin(byte_slice);
+                let mut send_to_sink = || {
+                    let mut itoa_buffer = itoa::Buffer::new();
+                    let mut cursor_bytes = itoa::Buffer::new();
+                    let byte_slice = itoa_buffer.format(cmd.0.args.len()).as_bytes();
+                    self.as_mut().project().sink_stream.start_send(b"*")?;
 
-                let mut itoa_buffer = itoa::Buffer::new();
-                let mut cursor_bytes = itoa::Buffer::new();
-                let byte_slice = itoa_buffer.format(cmd.0.args.len()).as_bytes();
-                send_to_sink(b"*")
-                    .and_then(|_| send_to_sink(byte_slice))
-                    .and_then(|_| send_to_sink(b"\r\n"))
-                    .and_then(|_| {
-                        for arg in cmd.args_iter() {
-                            let bytes = match arg {
-                                Arg::Cursor => cursor_bytes
-                                    .format(cmd.0.cursor.unwrap_or_default())
-                                    .as_bytes(),
-                                Arg::Simple(val) => val,
-                            };
+                    self.as_mut().project().sink_stream.start_send(byte_slice)?;
+                    self.as_mut().project().sink_stream.start_send(b"\r\n")?;
 
-                            send_to_sink(b"$")?;
-                            let s = itoa_buffer.format(bytes.len());
-                            send_to_sink(s.as_bytes())?;
-                            send_to_sink(b"\r\n")?;
+                    for arg in cmd.args_iter() {
+                        let bytes = match arg {
+                            Arg::Cursor => cursor_bytes
+                                .format(cmd.0.cursor.unwrap_or_default())
+                                .as_bytes(),
+                            Arg::Simple(val) => val,
+                        };
 
-                            send_to_sink(bytes)?;
-                            send_to_sink(b"\r\n")?;
-                        }
-                        Ok(())
-                    })
+                        self.as_mut().project().sink_stream.start_send(b"$")?;
+                        let s = itoa_buffer.format(bytes.len());
+                        self.as_mut()
+                            .project()
+                            .sink_stream
+                            .start_send(s.as_bytes())?;
+                        self.as_mut().project().sink_stream.start_send(b"\r\n")?;
+
+                        self.as_mut().project().sink_stream.start_send(bytes)?;
+                        self.as_mut().project().sink_stream.start_send(b"\r\n")?;
+                    }
+                    Ok(())
+                };
+                send_to_sink()
             }
-            Input::Full(full_command) => self_.sink_stream.as_mut().start_send(&full_command),
+            Input::Full(full_command) => self
+                .as_mut()
+                .project()
+                .sink_stream
+                .as_mut()
+                .start_send(&full_command),
         };
         match result {
             Ok(()) => {
@@ -350,7 +356,7 @@ where
                     response_aggregate,
                 };
 
-                self_.in_flight.push_back(entry);
+                self.as_mut().project().in_flight.push_back(entry);
                 Ok(())
             }
             Err(err) => {

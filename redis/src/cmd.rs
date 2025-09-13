@@ -111,9 +111,9 @@ impl FrozenCmd {
         cmd
     }
 
-    pub(crate) fn len(&self) -> usize {
-        args_len(self.args_iter(), 0)
-    }
+    // pub(crate) fn len(&self) -> usize {
+    //     args_len(self.args_iter(), 0)
+    // }
 }
 
 #[cfg(feature = "aio")]
@@ -410,21 +410,6 @@ where
     cmd.reserve(totlen);
 
     write_command(cmd, args, cursor).unwrap()
-}
-
-fn write_number(dst: &mut (impl ?Sized + Write), len: usize, marker: &[u8]) -> std::io::Result<()> {
-    dst.write_all(marker)?;
-    let mut buffer = itoa::Buffer::new();
-    dst.write_all(buffer.format(len).as_bytes())?;
-    dst.write_all(b"\r\n")
-}
-
-pub(crate) fn write_count(dst: &mut (impl ?Sized + Write), count: usize) -> std::io::Result<()> {
-    write_number(dst, count, b"*")
-}
-
-fn write_length(dst: &mut (impl ?Sized + Write), len: usize) -> std::io::Result<()> {
-    write_number(dst, len, b"$")
 }
 
 fn write_command<'a, I>(
@@ -979,7 +964,7 @@ pub fn pipe() -> Pipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::Cmd;
+    use super::*;
     #[cfg(feature = "bytes")]
     use bytes::BufMut;
     use rstest::rstest;
@@ -1096,7 +1081,7 @@ mod tests {
         }
     }
 
-    use crate::RedisWrite;
+    use crate::{cmd::ArgsIterator, Arg, RedisWrite};
     use std::io::Write;
 
     #[test]
