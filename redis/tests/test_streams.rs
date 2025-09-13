@@ -672,7 +672,7 @@ fn test_xclaim() {
 
     // grab this id if > 4ms
     let reply = con
-        .xclaim("k1", "g1", "c2", 4, &[claim.id.clone()])
+        .xclaim("k1", "g1", "c2", 4, std::slice::from_ref(&claim.id))
         .unwrap();
     assert_eq!(reply.ids.len(), 1);
     assert_eq!(reply.ids[0].id, claim.id);
@@ -698,7 +698,7 @@ fn test_xclaim() {
             "g1",
             "c3",
             4,
-            &[claim.id.clone()],
+            std::slice::from_ref(&claim.id),
             StreamClaimOptions::default().with_force(),
         )
         .unwrap();
@@ -772,7 +772,7 @@ fn test_xclaim_last_id() {
             "g1",
             "c2",
             4,
-            &[claim_middle_id.id.clone()],
+            std::slice::from_ref(&claim_middle_id.id),
             StreamClaimOptions::default()
                 .with_justid()
                 .with_lastid(claim_early_id.id.as_str()),
@@ -792,7 +792,7 @@ fn test_xclaim_last_id() {
             "g1",
             "c1",
             4,
-            &[claim_middle_id.id.clone()],
+            std::slice::from_ref(&claim_middle_id.id),
             StreamClaimOptions::default()
                 .with_justid()
                 .with_lastid(claim_late_id.id.as_str()),

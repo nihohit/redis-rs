@@ -1028,7 +1028,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cmd_packed_command_simple_args(#[values(false, true)] give_size: bool) {
+    fn test_cmd_packed_command_simple_args() {
         let args: &[&[u8]] = &[b"phone", b"barz"];
         let mut cmd = cmd("key");
         cmd.write_arg_fmt("value");
