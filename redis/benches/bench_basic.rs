@@ -163,6 +163,66 @@ fn bench_multiplexed_async_implicit_pipeline(b: &mut Bencher) {
     });
 }
 
+// Large-payload write-path benchmarks: these stress the bytes that get written to the socket
+// (where avoiding a copy of the encoded command matters), rather than round-trip latency.
+const LARGE_VALUE_SIZE: usize = 64 * 1024;
+const LARGE_PIPELINE_QUERIES: usize = 100;
+
+fn bench_multiplexed_async_large_pipeline(b: &mut Bencher) {
+    let ctx = TestContext::new();
+    let runtime = current_thread_runtime();
+    let mut con = runtime
+        .block_on(ctx.multiplexed_async_connection_tokio())
+        .unwrap();
+
+    let value = vec![b'x'; LARGE_VALUE_SIZE];
+    let mut pipe = redis::pipe();
+    for i in 0..LARGE_PIPELINE_QUERIES {
+        pipe.set(format!("foo{i}"), value.as_slice()).ignore();
+    }
+
+    b.iter(|| {
+        runtime
+            .block_on(async { pipe.exec_async(&mut con).await })
+            .unwrap();
+    });
+}
+
+fn bench_multiplexed_async_large_implicit_pipeline(b: &mut Bencher) {
+    let ctx = TestContext::new();
+    let runtime = current_thread_runtime();
+    let con = runtime
+        .block_on(ctx.multiplexed_async_connection_tokio())
+        .unwrap();
+
+    let value = vec![b'x'; LARGE_VALUE_SIZE];
+    let cmds: Vec<_> = (0..LARGE_PIPELINE_QUERIES)
+        .map(|i| {
+            redis::cmd("SET")
+                .arg(format!("foo{i}"))
+                .arg(value.as_slice())
+                .clone()
+        })
+        .collect();
+
+    let mut connections = (0..LARGE_PIPELINE_QUERIES)
+        .map(|_| con.clone())
+        .collect::<Vec<_>>();
+
+    b.iter(|| {
+        runtime
+            .block_on(async {
+                cmds.iter()
+                    .zip(&mut connections)
+                    .map(|(cmd, con)| cmd.exec_async(con))
+                    .collect::<stream::FuturesUnordered<_>>()
+                    .try_for_each(|()| async { Ok(()) })
+                    .await
+            })
+            .unwrap();
+    });
+}
+
 fn bench_query(c: &mut Criterion) {
     let mut group = c.benchmark_group("query");
     group
@@ -188,6 +248,21 @@ fn bench_query(c: &mut Criterion) {
         .bench_function("async_long_pipeline", bench_async_long_pipeline)
         .bench_function("long_pipeline", bench_long_pipeline)
         .throughput(Throughput::Elements(PIPELINE_QUERIES as u64));
+    group.finish();
+
+    let mut group = c.benchmark_group("query_pipeline_large");
+    group
+        .bench_function(
+            "multiplexed_async_large_pipeline",
+            bench_multiplexed_async_large_pipeline,
+        )
+        .bench_function(
+            "multiplexed_async_large_implicit_pipeline",
+            bench_multiplexed_async_large_implicit_pipeline,
+        )
+        .throughput(Throughput::Bytes(
+            (LARGE_VALUE_SIZE * LARGE_PIPELINE_QUERIES) as u64,
+        ));
     group.finish();
 }
 
@@ -258,10 +333,10 @@ fn bench_decode_simple(b: &mut Bencher, input: &[u8]) {
 fn bench_decode(c: &mut Criterion) {
     let value = Value::Array(vec![
         Value::Okay,
-        Value::SimpleString("testing".to_string()),
+        Value::SimpleString("testing".into()),
         Value::Array(vec![]),
         Value::Nil,
-        Value::BulkString(vec![b'a'; 10]),
+        Value::BulkString(vec![b'a'; 10].into()),
         Value::Int(7512182390),
     ]);
 

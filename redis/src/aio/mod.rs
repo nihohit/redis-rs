@@ -19,6 +19,8 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::pin::Pin;
 
+mod framed;
+pub(crate) use framed::RedisFramed;
 mod monitor;
 
 #[cfg(any(feature = "tls-rustls", feature = "tls-native-tls"))]
@@ -102,7 +104,7 @@ async fn execute_connection_pipeline<T>(
     (pipeline, instructions): (crate::Pipeline, ConnectionSetupComponents),
 ) -> RedisResult<AuthResult>
 where
-    T: Sink<Vec<u8>, Error = RedisError>,
+    T: Sink<bytes::Bytes, Error = RedisError>,
     T: Stream<Item = RedisResult<Value>>,
     T: Unpin + Send + 'static,
 {
@@ -110,7 +112,9 @@ where
     if count == 0 {
         return Ok(AuthResult::Succeeded);
     }
-    codec.send(pipeline.get_packed_pipeline()).await?;
+    codec
+        .send(bytes::Bytes::from(pipeline.get_packed_pipeline()))
+        .await?;
 
     let mut results = Vec::with_capacity(count);
     for _ in 0..count {
@@ -127,7 +131,7 @@ pub(super) async fn setup_connection<T>(
     #[cfg(feature = "cache-aio")] cache_config: Option<crate::caching::CacheConfig>,
 ) -> RedisResult<()>
 where
-    T: Sink<Vec<u8>, Error = RedisError>,
+    T: Sink<bytes::Bytes, Error = RedisError>,
     T: Stream<Item = RedisResult<Value>>,
     T: Unpin + Send + 'static,
 {

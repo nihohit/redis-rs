@@ -5,11 +5,9 @@ use std::{
 
 use futures_util::{SinkExt, Stream, StreamExt, ready};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_util::codec::Decoder;
 
 use crate::{
     FromRedisValue, RedisConnectionInfo, RedisResult, Value, cmd, errors::closed_connection_error,
-    parser::ValueCodec,
 };
 
 use super::setup_connection;
@@ -27,7 +25,7 @@ impl Monitor {
     where
         C: Unpin + AsyncRead + AsyncWrite + Send + Sync + 'static,
     {
-        let mut codec = ValueCodec::default().framed(stream);
+        let mut codec = super::RedisFramed::new(stream);
         setup_connection(
             &mut codec,
             connection_info,
@@ -35,7 +33,9 @@ impl Monitor {
             None,
         )
         .await?;
-        codec.send(cmd("MONITOR").get_packed_command()).await?;
+        codec
+            .send(bytes::Bytes::from(cmd("MONITOR").get_packed_command()))
+            .await?;
         codec.next().await.ok_or_else(closed_connection_error)??;
         let stream = Box::new(codec);
 

@@ -8,13 +8,13 @@ use crate::{
     check_resp3, cmd,
     cmd::Cmd,
     errors::{RedisError, closed_connection_error},
-    parser::ValueCodec,
     types::{RedisFuture, RedisResult, Value},
 };
 use ::tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot},
 };
+use bytes::Bytes;
 #[cfg(feature = "token-based-authentication")]
 use {
     crate::errors::ErrorKind,
@@ -36,7 +36,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
 use std::time::Duration;
-use tokio_util::codec::Decoder;
 
 // Senders which the result of a single request are sent through
 type PipelineOutput = oneshot::Sender<RedisResult<Value>>;
@@ -87,7 +86,7 @@ struct InFlight {
 
 // A single message sent through the pipeline
 struct PipelineMessage {
-    input: Vec<u8>,
+    input: Bytes,
     // If `output` is None, then the caller doesn't expect to receive an answer.
     output: Option<PipelineOutput>,
     // If `None`, this is a single request, not a pipeline of multiple requests.
@@ -154,7 +153,7 @@ where
         #[cfg(feature = "cache-aio")] cache_manager: Option<CacheManager>,
     ) -> Self
     where
-        T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: Sink<Bytes, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
     {
         PipelineSink {
             sink_stream,
@@ -296,7 +295,7 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+    T: Sink<Bytes, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
 {
     type Error = ();
 
@@ -419,7 +418,7 @@ impl Pipeline {
         buffer_size: usize,
     ) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<Vec<u8>, Error = RedisError>,
+        T: Sink<Bytes, Error = RedisError>,
         T: Stream<Item = RedisResult<Value>>,
         T: Unpin + Send + 'static,
     {
@@ -440,7 +439,7 @@ impl Pipeline {
 
     async fn send_recv(
         &mut self,
-        input: Vec<u8>,
+        input: Bytes,
         // If `None`, this is a single request, not a pipeline of multiple requests.
         // If `Some`, the value inside defines how the response should look like
         expectation: Option<PipelineResponseExpectation>,
@@ -572,7 +571,7 @@ impl MultiplexedConnection {
     where
         C: Unpin + AsyncRead + AsyncWrite + Send + 'static,
     {
-        let mut codec = ValueCodec::default().framed(stream);
+        let mut codec = super::RedisFramed::new(stream);
         if config.push_sender.is_some() {
             check_resp3!(
                 connection_info.protocol,
@@ -750,7 +749,7 @@ impl MultiplexedConnection {
                     let result = self
                         .pipeline
                         .send_recv(
-                            pipeline.get_packed_pipeline(),
+                            Bytes::from(pipeline.get_packed_pipeline()),
                             Some(PipelineResponseExpectation {
                                 skipped_response_count: 0,
                                 expected_response_count: pipeline.len(),
@@ -769,7 +768,7 @@ impl MultiplexedConnection {
         }
         self.pipeline
             .send_recv(
-                cmd.get_packed_command(),
+                Bytes::from(cmd.get_packed_command()),
                 None,
                 self.response_timeout,
                 cmd.is_no_response(),
@@ -813,7 +812,7 @@ impl MultiplexedConnection {
             let result = self
                 .pipeline
                 .send_recv(
-                    pipeline.get_packed_pipeline(),
+                    Bytes::from(pipeline.get_packed_pipeline()),
                     Some(PipelineResponseExpectation {
                         skipped_response_count,
                         expected_response_count,
@@ -830,7 +829,7 @@ impl MultiplexedConnection {
         let value = self
             .pipeline
             .send_recv(
-                cmd.get_packed_pipeline(),
+                Bytes::from(cmd.get_packed_pipeline()),
                 Some(PipelineResponseExpectation {
                     skipped_response_count: offset,
                     expected_response_count: count,
@@ -982,6 +981,7 @@ impl MultiplexedConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::ValueCodec;
 
     #[test]
     fn test_pipeline_resolve_buffer_size_default() {
@@ -1018,7 +1018,7 @@ mod tests {
         let (server_read, mut server_write) = tokio::io::split(server_half);
 
         tokio::spawn(async move {
-            let mut reader = FramedRead::new(server_read, ValueCodec::default());
+            let mut reader = FramedRead::new(server_read, ValueCodec);
             while let Some(Ok(_)) = reader.next().await {
                 let _ = cmd_received_tx.send(()).await;
             }
@@ -1307,7 +1307,7 @@ mod tests {
         // becomes Pending — the general "server stops reading once its
         // own write is back-pressured" behavior the deadlock requires.
         let server_task = tokio::spawn(async move {
-            let mut reader = FramedRead::new(server_read, ValueCodec::default());
+            let mut reader = FramedRead::new(server_read, ValueCodec);
             loop {
                 match reader.next().await {
                     Some(Ok(_)) => {}
@@ -1381,7 +1381,7 @@ mod tests {
         let (server_read, mut server_write) = tokio::io::split(server_half);
 
         tokio::spawn(async move {
-            let mut reader = FramedRead::new(server_read, ValueCodec::default());
+            let mut reader = FramedRead::new(server_read, ValueCodec);
             while let Some(Ok(_)) = reader.next().await {
                 let _ = cmd_received_tx.send(()).await;
             }

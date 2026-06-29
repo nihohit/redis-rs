@@ -1,12 +1,13 @@
 use crate::types::{RedisResult, Value};
 use crate::{
     FromRedisValue, Msg, RedisConnectionInfo, ToRedisArgs, aio::Runtime, cmd, errors::RedisError,
-    errors::closed_connection_error, from_redis_value, parser::ValueCodec,
+    errors::closed_connection_error, from_redis_value,
 };
 use ::tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::oneshot,
 };
+use bytes::Bytes;
 use futures_util::{
     future::{Future, FutureExt},
     ready,
@@ -19,7 +20,6 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio_util::codec::Decoder;
 
 use super::{SharedHandleContainer, setup_connection};
 
@@ -28,7 +28,7 @@ type RequestResultSender = oneshot::Sender<RedisResult<Value>>;
 
 // A single message sent through the pipeline
 struct PipelineMessage {
-    input: Vec<u8>,
+    input: Bytes,
     output: RequestResultSender,
 }
 
@@ -82,7 +82,7 @@ where
 {
     fn new(sink_stream: T, sender: UnboundedSender<Msg>) -> Self
     where
-        T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+        T: Sink<Bytes, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
     {
         PipelineSink {
             sink_stream,
@@ -116,7 +116,7 @@ where
             Ok(Value::Array(value)) => {
                 if let Some(Value::BulkString(kind)) = value.first()
                     && matches!(
-                        kind.as_slice(),
+                        kind.as_ref(),
                         b"subscribe" | b"psubscribe" | b"unsubscribe" | b"punsubscribe" | b"pong"
                     )
                 {
@@ -166,7 +166,7 @@ where
 
 impl<T> Sink<PipelineMessage> for PipelineSink<T>
 where
-    T: Sink<Vec<u8>, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
+    T: Sink<Bytes, Error = RedisError> + Stream<Item = RedisResult<Value>> + 'static,
 {
     type Error = ();
 
@@ -247,7 +247,7 @@ impl PubSubSink {
         messages_sender: UnboundedSender<Msg>,
     ) -> (Self, impl Future<Output = ()>)
     where
-        T: Sink<Vec<u8>, Error = RedisError>,
+        T: Sink<Bytes, Error = RedisError>,
         T: Stream<Item = RedisResult<Value>>,
         T: Unpin + Send + 'static,
     {
@@ -267,7 +267,7 @@ impl PubSubSink {
         (PubSubSink { sender }, f)
     }
 
-    async fn send_recv(&mut self, input: Vec<u8>) -> Result<Value, RedisError> {
+    async fn send_recv(&mut self, input: Bytes) -> Result<Value, RedisError> {
         let (sender, receiver) = oneshot::channel();
 
         self.sender
@@ -295,7 +295,7 @@ impl PubSubSink {
     /// # }
     /// ```
     pub async fn subscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
-        let cmd = cmd("SUBSCRIBE").arg(channel_name).get_packed_command();
+        let cmd = Bytes::from(cmd("SUBSCRIBE").arg(channel_name).get_packed_command());
         self.send_recv(cmd).await.map(|_| ())
     }
 
@@ -312,7 +312,7 @@ impl PubSubSink {
     /// # }
     /// ```
     pub async fn unsubscribe(&mut self, channel_name: impl ToRedisArgs) -> RedisResult<()> {
-        let cmd = cmd("UNSUBSCRIBE").arg(channel_name).get_packed_command();
+        let cmd = Bytes::from(cmd("UNSUBSCRIBE").arg(channel_name).get_packed_command());
         self.send_recv(cmd).await.map(|_| ())
     }
 
@@ -329,7 +329,7 @@ impl PubSubSink {
     /// # }
     /// ```
     pub async fn psubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
-        let cmd = cmd("PSUBSCRIBE").arg(channel_pattern).get_packed_command();
+        let cmd = Bytes::from(cmd("PSUBSCRIBE").arg(channel_pattern).get_packed_command());
         self.send_recv(cmd).await.map(|_| ())
     }
 
@@ -346,9 +346,11 @@ impl PubSubSink {
     /// # }
     /// ```
     pub async fn punsubscribe(&mut self, channel_pattern: impl ToRedisArgs) -> RedisResult<()> {
-        let cmd = cmd("PUNSUBSCRIBE")
-            .arg(channel_pattern)
-            .get_packed_command();
+        let cmd = Bytes::from(
+            cmd("PUNSUBSCRIBE")
+                .arg(channel_pattern)
+                .get_packed_command(),
+        );
         self.send_recv(cmd).await.map(|_| ())
     }
 
@@ -357,14 +359,14 @@ impl PubSubSink {
         &mut self,
         message: impl ToRedisArgs,
     ) -> RedisResult<T> {
-        let cmd = cmd("PING").arg(message).get_packed_command();
+        let cmd = Bytes::from(cmd("PING").arg(message).get_packed_command());
         let response = self.send_recv(cmd).await?;
         Ok(from_redis_value(response)?)
     }
 
     /// Sends a ping to the server
     pub async fn ping<T: FromRedisValue>(&mut self) -> RedisResult<T> {
-        let cmd = cmd("PING").get_packed_command();
+        let cmd = Bytes::from(cmd("PING").get_packed_command());
         let response = self.send_recv(cmd).await?;
         Ok(from_redis_value(response)?)
     }
@@ -385,7 +387,7 @@ impl PubSub {
     where
         C: Unpin + AsyncRead + AsyncWrite + Send + 'static,
     {
-        let mut codec = ValueCodec::default().framed(stream);
+        let mut codec = super::RedisFramed::new(stream);
         setup_connection(
             &mut codec,
             connection_info,
