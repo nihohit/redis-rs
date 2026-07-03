@@ -10,6 +10,67 @@ redis = "2"
 
 ## Breaking Changes
 
+### Zero-copy response parsing (Breaking Change)
+
+`Value` now stores its textual and binary payloads in cheaply-cloneable,
+reference-counted buffers instead of owned `Vec<u8>`/`String`:
+
+- `Value::BulkString(Vec<u8>)` → `Value::BulkString(bytes::Bytes)`
+- `Value::SimpleString(String)` → `Value::SimpleString(Str)`
+- `Value::VerbatimString { text: String, .. }` → `{ text: Str, .. }`
+- `Value::BigNumber(Vec<u8>)` → `Value::BigNumber(bytes::Bytes)` (unchanged under the `num-bigint` feature)
+- `PushKind::Other(String)` / `VerbatimFormat::Unknown(String)` → `Str`
+- Server error code/detail are now `Str` as well
+
+`Str` is a new UTF-8-guaranteed string backed by `bytes::Bytes`. It derefs to
+`&str`, so most code keeps working unchanged, and it converts cheaply to/from
+`String` and `Bytes` (`Into<String>`, `Into<Bytes>`).
+
+The parser was rewritten to be **zero-copy**: instead of allocating a fresh
+`Vec`/`String` for every element of a response, it parses into byte-range
+offsets and then produces each leaf as a cheap reference-counted slice into the
+response buffer. A response with many elements no longer performs a heap
+allocation per element.
+
+**Migration:** Most code that goes through `FromRedisValue`/`from_redis_value`
+is unaffected. Code that matches on `Value` directly should:
+
+```rust
+// Before:
+if let Value::BulkString(bytes) = v {
+    let s = String::from_utf8(bytes)?;       // bytes: Vec<u8>
+}
+// After:
+if let Value::BulkString(bytes) = v {
+    let s = String::from_utf8(bytes.into())?; // bytes: Bytes  (or use &bytes as &[u8])
+}
+```
+
+`Str` derefs to `&str`, so `Value::SimpleString` matches that previously used
+the inner `String` as a `&str` continue to work; constructing one now takes a
+`Str` (e.g. `Value::SimpleString("OK".into())`).
+
+### Why it's faster
+
+The new parser allocates a small, constant number of times per response rather
+than once per element, and avoids copying bulk-string payloads out of the read
+buffer entirely on the async codec path. Parsing benchmarks
+(`cargo bench -p redis --bench bench_decode`) comparing the new parser against
+the previous `Vec`/`String`-based one:
+
+| Response                     | Allocations (before → after) | Time (before → after)         |
+| ---------------------------- | ---------------------------- | ----------------------------- |
+| Single 1 MiB bulk string     | 154 → **2** (77×)            | 50.8 µs → 12.3 µs (**4.1×**)  |
+| Array of 5000 small bulks    | 7509 → **16** (469×)         | 548 µs → 367 µs (1.5×)        |
+| Array of 500 × 1 KiB bulks   | 2022 → **11** (184×)         | 160.7 µs → 45.6 µs (**3.5×**) |
+| Array of 5000 simple strings | 7152 → **16** (447×)         | 411 µs → 263 µs (1.6×)        |
+| Map of 1000 key/value pairs  | 2933 → **13** (226×)         | 206 µs → 149 µs (1.4×)        |
+
+In short: **1.4×–4.1× faster parsing and 10×–470× fewer heap allocations**, with
+the largest wins on responses that contain many elements. Cloning a `Value` (or
+any `Str`/`BulkString` inside it) is now a reference-count bump rather than a
+deep copy.
+
 ### `cmd_iter` yields `CmdRef` instead of `&Cmd` (Breaking Change)
 
 **Most users can upgrade to 2.0.0 with no code changes.** The flattening is an internal representation change; the pipeline builder API (`cmd`, `arg`, `add_command`, `ignore`, `query`, `query_async`, `exec`, …) is unchanged. The only adjustments are needed if you iterate a pipeline's commands or call `with_capacity` directly.
