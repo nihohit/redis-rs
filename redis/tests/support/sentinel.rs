@@ -4,7 +4,7 @@ use redis::ProtocolVersion;
 use redis::TlsMode;
 use redis::sentinel::SentinelNodeConnectionInfo;
 use redis_test::sentinel::{RedisSentinelCluster, wait_for_master_server, wait_for_replica};
-use redis_test::server::{RedisServer, use_protocol};
+use redis_test::server::RedisServer;
 
 use crate::support::start_tls_crypto_provider;
 
@@ -64,7 +64,7 @@ impl TestSentinelContext {
             cluster,
             sentinel,
             sentinels_connection_info: initial_nodes,
-            protocol: use_protocol().unwrap_or(ProtocolVersion::RESP2),
+            protocol: ProtocolVersion::RESP2,
             mtls_enabled: MTLS_NOT_ENABLED,
         };
         context.wait_for_cluster_up();

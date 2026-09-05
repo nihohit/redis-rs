@@ -14,7 +14,7 @@ use redis::aio::ConnectionLike;
 #[cfg(feature = "cluster-async")]
 use redis::cluster_async::Connect;
 use redis_test::cluster::{RedisCluster, RedisClusterConfiguration};
-use redis_test::server::{RedisServer, use_protocol};
+use redis_test::server::RedisServer;
 use redis_test::utils::{build_single_client, start_tls_crypto_provider};
 use redis_test::{AvailableComponents, TestContextVersioning};
 
@@ -91,7 +91,7 @@ impl TestClusterContext {
         Self::new_with_config_and_builder_and_protocol(
             cluster_config,
             initializer,
-            use_protocol().unwrap_or(ProtocolVersion::RESP2),
+            ProtocolVersion::RESP2,
         )
     }
 
@@ -105,7 +105,7 @@ impl TestClusterContext {
     {
         start_tls_crypto_provider();
         let mtls_enabled = cluster_config.get_mtls_enabled();
-        let cluster = RedisCluster::new(cluster_config);
+        let cluster = RedisCluster::new(cluster_config.protocol(protocol));
         let initial_nodes: Vec<ConnectionInfo> = cluster
             .iter_servers()
             .map(RedisServer::connection_info)

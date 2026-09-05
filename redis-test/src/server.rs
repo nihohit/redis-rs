@@ -19,7 +19,7 @@ pub fn use_protocol() -> Option<ProtocolVersion> {
 }
 
 pub fn redis_settings() -> RedisConnectionInfo {
-    RedisConnectionInfo::default().set_protocol(use_protocol().unwrap_or(ProtocolVersion::RESP2))
+    RedisConnectionInfo::default()
 }
 
 /// Get the default host to use for TCP connections.
@@ -60,6 +60,7 @@ pub enum Module {
 #[derive(Default)]
 pub struct RedisServerBuilder {
     server_type: Option<ServerType>,
+    protocol: Option<ProtocolVersion>,
     address: Option<ConnectionAddr>,
     config_file: Option<PathBuf>,
     cert_auth_field: Option<String>,
@@ -76,6 +77,11 @@ impl RedisServerBuilder {
 
     pub fn server_type(mut self, server_type: ServerType) -> Self {
         self.server_type = Some(server_type);
+        self
+    }
+
+    pub fn protocol(mut self, protocol: ProtocolVersion) -> Self {
+        self.protocol = Some(protocol);
         self
     }
 
@@ -181,6 +187,7 @@ pub struct RedisServer {
     pub tempdir: tempfile::TempDir,
     pub log_file: PathBuf,
     pub addr: redis::ConnectionAddr,
+    pub protocol: ProtocolVersion,
     pub tls_paths: Option<TlsFilePaths>,
     pub mtls: bool,
 }
@@ -237,7 +244,7 @@ impl RedisServer {
         }
     }
 
-    /// Builds a new instance from a [`RedisServerBuilder`]
+/// Builds a new instance from a [`RedisServerBuilder`]
     fn from_builder(
         mut builder: RedisServerBuilder,
         cmd_refiner: impl FnOnce(&mut RedisServerCommand),
@@ -246,10 +253,7 @@ impl RedisServer {
             // This is technically a race, but we can't do better with
             // the tools that redis gives us :(
             let redis_port = get_random_available_port();
-            let st = builder
-                .server_type
-                .or_else(ServerType::get_intended)
-                .unwrap_or(ServerType::Tcp);
+            let st = builder.server_type.unwrap_or(ServerType::Tcp);
             Self::get_addr_for_type(redis_port, st)
         });
 
@@ -358,6 +362,7 @@ impl RedisServer {
             log_file,
             tempdir,
             addr,
+            protocol: builder.protocol.unwrap_or(ProtocolVersion::RESP2),
             tls_paths: builder.tls_paths,
             mtls: builder.mtls,
         }
@@ -377,7 +382,7 @@ impl RedisServer {
     }
 
     pub fn connection_info(&self) -> redis::ConnectionInfo {
-        self.connection_info_with_protocol(use_protocol().unwrap_or(ProtocolVersion::RESP2))
+        self.connection_info_with_protocol(self.protocol)
     }
 
     pub fn connection_info_with_protocol(
