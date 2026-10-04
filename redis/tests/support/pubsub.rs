@@ -3,9 +3,11 @@
 //! types that the fix covers, so that the same scenarios can run against all of them.
 
 use std::future::Future;
+use std::time::Duration;
 
 use assert_matches::assert_matches;
 use futures::future::join3;
+use futures_time::future::FutureExt;
 use redis::aio::{ConnectionLike, PubSubSink};
 use redis::{AsyncCommands, FromRedisValue, PushInfo, PushKind, RedisResult, Value, cmd};
 use redis_test::redis_value;
@@ -22,6 +24,29 @@ pub fn assert_is_pong(response: Value) {
         }
         other => panic!("the ping response was corrupted: {other:?}"),
     }
+}
+
+/// Receives the next push from `rx`, failing if none arrives within `timeout`.
+pub async fn get_push_with_timeout(
+    rx: &mut UnboundedReceiver<PushInfo>,
+    timeout: Duration,
+) -> RedisResult<PushInfo> {
+    Ok(rx
+        .recv()
+        .timeout(futures_time::time::Duration::from(timeout))
+        .await?
+        .unwrap())
+}
+
+/// Receives the next push from `rx`, failing if none arrives shortly.
+pub async fn get_push(rx: &mut UnboundedReceiver<PushInfo>) -> RedisResult<PushInfo> {
+    get_push_with_timeout(rx, Duration::from_millis(5)).await
+}
+
+/// Asserts that the next push that was passed to `rx` is of `kind` with `data`.
+pub async fn assert_push(rx: &mut UnboundedReceiver<PushInfo>, kind: PushKind, data: Vec<Value>) {
+    let push = get_push(rx).await.unwrap();
+    assert_eq!(push, PushInfo { kind, data });
 }
 
 /// Asserts that the next confirmation that was passed to `rx` reports the subscription of `name`,
@@ -209,6 +234,56 @@ impl SubscriptionSender for redis::aio::MultiplexedConnection {
 
     fn punsubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
         Self::punsubscribe(self, args)
+    }
+}
+
+#[cfg(feature = "connection-manager")]
+impl SubscriptionSender for redis::aio::ConnectionManager {
+    fn subscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::subscribe(self, args)
+    }
+
+    fn psubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::psubscribe(self, args)
+    }
+
+    fn unsubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::unsubscribe(self, args)
+    }
+
+    fn punsubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::punsubscribe(self, args)
+    }
+}
+
+#[cfg(feature = "cluster-async")]
+impl SubscriptionSender for redis::cluster_async::ClusterConnection {
+    fn subscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::subscribe(self, args)
+    }
+
+    fn psubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::psubscribe(self, args)
+    }
+
+    fn unsubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::unsubscribe(self, args)
+    }
+
+    fn punsubscribe(&mut self, args: &[&str]) -> impl Future<Output = RedisResult<()>> {
+        Self::punsubscribe(self, args)
+    }
+
+    fn ping_routed_by_key(&mut self, key: &str) -> impl Future<Output = RedisResult<Value>> {
+        let route = redis::cluster_routing::RoutingInfo::SingleNode(
+            redis::cluster_routing::SingleNodeRoutingInfo::SpecificNode(
+                redis::cluster_routing::Route::with_key(
+                    key,
+                    redis::cluster_routing::SlotAddr::Master,
+                ),
+            ),
+        );
+        async move { self.route_command(cmd("PING"), route).await }
     }
 }
 

@@ -1,11 +1,11 @@
-#[cfg(any(feature = "cluster-async", test))]
+#[cfg(test)]
 use core::str;
 use std::collections::HashSet;
 
 #[cfg(any(feature = "connection-manager", feature = "cluster-async", test))]
 use crate::Pipeline;
 use crate::Value;
-#[cfg(any(feature = "cluster-async", test))]
+#[cfg(test)]
 use crate::{Arg, Cmd};
 
 /// The kind of subscription that a server confirmation changes.
@@ -15,6 +15,8 @@ pub(crate) enum SubscriptionKind {
     Channel,
     /// A pub/sub pattern.
     Pattern,
+    /// A sharded pub/sub channel.
+    ShardChannel,
 }
 
 /// A subscription change described by a server confirmation of a subscription command.
@@ -30,18 +32,20 @@ pub(crate) struct SubscriptionChange {
 }
 
 /// The subscriptions a connection has confirmed, used to resolve how many confirmations a
-/// zero-argument `UNSUBSCRIBE` or `PUNSUBSCRIBE` is answered with: the server sends one
-/// confirmation per active subscription, and the reply doesn't carry that count.
+/// zero-argument `UNSUBSCRIBE`, `PUNSUBSCRIBE` or `SUNSUBSCRIBE` is answered with: the server
+/// sends one confirmation per active subscription, and the reply doesn't carry that count.
 /// See <https://github.com/redis-rs/redis-rs/issues/2423>.
 ///
 /// Confirmations are applied in order, so the tracked sets match the server whenever a command's
 /// first confirmation arrives. They can drift apart if the server drops subscriptions without
 /// per-channel confirmations - the known case is the RESP3 `RESET` command - which makes a
 /// zero-argument unsubscribe resolve the wrong count.
+///
+/// A shared instance (`Arc<Mutex<_>>`) is written only by the connection that reads the
+/// confirmations; its other holders only read it.
 #[derive(Default)]
 pub(crate) struct SubscriptionTracker {
     subscriptions: HashSet<Vec<u8>>,
-    #[cfg(any(feature = "connection-manager", feature = "cluster-async", test))]
     s_subscriptions: HashSet<Vec<u8>>,
     p_subscriptions: HashSet<Vec<u8>>,
 }
@@ -51,28 +55,22 @@ pub(crate) enum SubscriptionAction {
     Unsubscribe,
     PSubscribe,
     PUnsubscribe,
-    #[cfg(any(feature = "cluster-async", test))]
     SSubscribe,
-    #[cfg(any(feature = "cluster-async", test))]
     Sunsubscribe,
 }
 
 impl SubscriptionAction {
     fn additive(&self) -> bool {
         match self {
-            Self::Subscribe | Self::PSubscribe => true,
-            #[cfg(any(feature = "cluster-async", test))]
-            Self::SSubscribe => true,
+            Self::Subscribe | Self::PSubscribe | Self::SSubscribe => true,
 
-            Self::Unsubscribe | Self::PUnsubscribe => false,
-            #[cfg(any(feature = "cluster-async", test))]
-            Self::Sunsubscribe => false,
+            Self::Unsubscribe | Self::PUnsubscribe | Self::Sunsubscribe => false,
         }
     }
 }
 
 impl SubscriptionTracker {
-    #[cfg(any(feature = "cluster-async", test))]
+    #[cfg(test)]
     pub(crate) fn to_request(
         cmd: &Cmd,
     ) -> Option<(SubscriptionAction, impl Iterator<Item = Vec<u8>>)> {
@@ -120,7 +118,6 @@ impl SubscriptionTracker {
             SubscriptionAction::PSubscribe | SubscriptionAction::PUnsubscribe => {
                 &mut self.p_subscriptions
             }
-            #[cfg(any(feature = "cluster-async", test))]
             SubscriptionAction::SSubscribe | SubscriptionAction::Sunsubscribe => {
                 &mut self.s_subscriptions
             }
@@ -147,6 +144,8 @@ impl SubscriptionTracker {
             (SubscriptionKind::Channel, false) => SubscriptionAction::Unsubscribe,
             (SubscriptionKind::Pattern, true) => SubscriptionAction::PSubscribe,
             (SubscriptionKind::Pattern, false) => SubscriptionAction::PUnsubscribe,
+            (SubscriptionKind::ShardChannel, true) => SubscriptionAction::SSubscribe,
+            (SubscriptionKind::ShardChannel, false) => SubscriptionAction::Sunsubscribe,
         };
         if let Some(channel) = change.channel {
             self.update_with_request(action, core::iter::once(channel));
@@ -160,6 +159,7 @@ impl SubscriptionTracker {
         let subscriptions = match kind {
             SubscriptionKind::Channel => &self.subscriptions,
             SubscriptionKind::Pattern => &self.p_subscriptions,
+            SubscriptionKind::ShardChannel => &self.s_subscriptions,
         };
         subscriptions.len().max(1)
     }
@@ -202,6 +202,8 @@ pub(crate) fn subscription_change(value: &Value) -> Option<SubscriptionChange> {
                 crate::PushKind::Unsubscribe => (SubscriptionKind::Channel, false),
                 crate::PushKind::PSubscribe => (SubscriptionKind::Pattern, true),
                 crate::PushKind::PUnsubscribe => (SubscriptionKind::Pattern, false),
+                crate::PushKind::SSubscribe => (SubscriptionKind::ShardChannel, true),
+                crate::PushKind::SUnsubscribe => (SubscriptionKind::ShardChannel, false),
                 _ => return None,
             };
             ((kind, subscribed), data.first().and_then(value_channel))
@@ -213,6 +215,8 @@ pub(crate) fn subscription_change(value: &Value) -> Option<SubscriptionChange> {
                     b"unsubscribe" => (SubscriptionKind::Channel, false),
                     b"psubscribe" => (SubscriptionKind::Pattern, true),
                     b"punsubscribe" => (SubscriptionKind::Pattern, false),
+                    b"ssubscribe" => (SubscriptionKind::ShardChannel, true),
+                    b"sunsubscribe" => (SubscriptionKind::ShardChannel, false),
                     _ => return None,
                 },
                 _ => return None,
@@ -363,6 +367,18 @@ mod tests {
                 false,
                 b"punsubscribe".as_slice(),
             ),
+            (
+                PushKind::SSubscribe,
+                SubscriptionKind::ShardChannel,
+                true,
+                b"ssubscribe".as_slice(),
+            ),
+            (
+                PushKind::SUnsubscribe,
+                SubscriptionKind::ShardChannel,
+                false,
+                b"sunsubscribe".as_slice(),
+            ),
         ];
 
         for (push_kind, kind, subscribed, name) in cases {
@@ -410,7 +426,11 @@ mod tests {
         let mut subscriptions = SubscriptionTracker::default();
 
         // With nothing tracked, the server still sends a single confirmation with a nil channel.
-        for kind in [SubscriptionKind::Channel, SubscriptionKind::Pattern] {
+        for kind in [
+            SubscriptionKind::Channel,
+            SubscriptionKind::Pattern,
+            SubscriptionKind::ShardChannel,
+        ] {
             assert_eq!(subscriptions.unsubscribe_all_target(kind), 1);
         }
 
@@ -418,6 +438,7 @@ mod tests {
         let kinds = [
             (SubscriptionKind::Channel, b"channel".as_slice()),
             (SubscriptionKind::Pattern, b"pattern".as_slice()),
+            (SubscriptionKind::ShardChannel, b"shard".as_slice()),
         ];
         for (kind, name) in kinds {
             subscriptions.apply(SubscriptionChange {
@@ -453,6 +474,10 @@ mod tests {
         );
         assert_eq!(
             subscriptions.unsubscribe_all_target(SubscriptionKind::Pattern),
+            1
+        );
+        assert_eq!(
+            subscriptions.unsubscribe_all_target(SubscriptionKind::ShardChannel),
             1
         );
 
